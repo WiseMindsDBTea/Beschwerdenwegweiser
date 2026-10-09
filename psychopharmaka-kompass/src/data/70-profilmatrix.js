@@ -107,3 +107,9 @@ window.PROFM = {
  tetrabenazin:     [0,0,0,0,0,0,0,  2,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0,0,1,1],
  prazosin:         [0,0,0,0,1,0,0,  1,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,1,0]
 };
+
+/* Belegte Werte (v3.4): ersetzen die eigene Schätzung für einzelne Zellen und tragen die Quelle.
+   Format: PSRC.<wirkstoff>.<Spalte> = {v: 0–3, q: "Kurzquelle mit Stand"}. Nur aus der Originalquelle eintragen,
+   z. B. ACB-Skala (Boustani 2008, Update 2012) für AC, CredibleMeds-Kategorie für QT, PRISCUS 2.0 für ältere Patienten.
+   Noch leer: Die Originallisten lagen beim Aufbau nicht vor. */
+window.PSRC = window.PSRC || {};

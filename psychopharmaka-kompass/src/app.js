@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var D = window.D, SIT = window.SIT, RULES = window.RULES || [];
-var VERSION = "v3.3 · 09.10.2026";
+var VERSION = "v3.4 · 09.10.2026";
 var STAND = "Stand v1.2 (07.10.2026): Etappe 2 ergänzt 18 Diagnose-Algorithmen und 41 volle Wirkstoffkarten, geschrieben aus Benkert-Kompendium 2021, Pocket Guide 2021, Dreher 2021, Fachinformationen, Rote-Hand-Briefen und den gelesenen Leitlinienteilen (Stand je Karte). Etappe-1-Karten wie in v1.1 abgeglichen. Nicht belegbare Angaben bleiben als „prüfen“ markiert.";
 var AREAS = {schlaf:"Schlaf", spann:"Anspannung & Agitation", epms:"EPMS & Notfälle", entzug:"Entzug", dep:"Depression", angst:"Angst & Zwang", bip:"Bipolare Störung", schiz:"Schizophrenie-Spektrum", bps:"Borderline (BPS)", adhs:"ADHS", ptbs:"PTBS", demenz:"Demenz"};
 var AREA_SHORT = {spann:"Anspannung", epms:"Notfall", schiz:"Schizophrenie", bip:"Bipolar", bps:"Borderline"};
@@ -332,6 +332,35 @@ function refreshNoteField(){
 }
 function updateNoteHint(){ var h=$("#note-mode"); if(h) h.textContent = Notes.mode==="db" ? "Synchronisiert über deine Geräte, nur für dich sichtbar." : "Nur auf diesem Gerät gespeichert (Sync nur in claude.ai)."; }
 
+/* ---------- Rückmeldungen (v3.4): Fehler melden, Profilpunkte bewerten ---------- */
+var FB = {col:null, mode:"local", list:[], kinds:[["fehler","Fehler"],["fehlt","Fehlt"],["veraltet","Veraltet"],["anderes","Sonstiges"]],
+  init:function(){
+    if(!window.claude || !window.claude.use) return;
+    window.claude.use("db").then(function(db){ if(!db) return;
+      FB.col = db.collection("reports"); FB.mode = "db";
+      var pend = LS.get("reports", []); if(pend.length){ LS.set("reports", []); pend.forEach(function(r){ FB.col.add(r).catch(function(){}); }); }
+      FB.col.onSnapshot(function(snap){ FB.list = snap.docs.map(function(d){ var v = d.data()||{}; v._id = d.id; return v; }); var c = $("#fb-count"); if(c) c.textContent = fbCountText(); }, function(){});
+    }).catch(function(){});
+  },
+  send:function(r){
+    r.at = Date.now(); r.v = VERSION; r.status = "offen";
+    if(FB.mode==="db" && FB.col) return FB.col.add(r).then(function(){ return "Gesendet – wird beim nächsten Update geprüft und eingearbeitet."; }, function(e){ var L = LS.get("reports",[]); L.push(r); LS.set("reports",L); return "Nicht gesendet ("+(e&&e.code||"Fehler")+"), auf diesem Gerät vorgemerkt."; });
+    var L = LS.get("reports",[]); L.push(r); LS.set("reports",L); return Promise.resolve("Auf diesem Gerät vorgemerkt – wird übertragen, sobald die App in claude.ai geöffnet ist.");
+  }
+};
+function fbCountText(){ var open = FB.list.filter(function(r){ return r.status!=="erledigt"; }).length, done = FB.list.length-open; return FB.list.length ? open+" offen · "+done+" eingearbeitet" : "noch keine"; }
+function fbBlock(key, title){
+  return '<details class="fb"><summary>Fehler melden oder Korrektur vorschlagen</summary><div class="fb-b" data-fbkey="'+esc(key)+'" data-fbtitle="'+esc(title)+'">'+
+    '<div class="seg fb-k" role="group" aria-label="Art">'+FB.kinds.map(function(k,i){ return '<button data-fbkind="'+k[0]+'" aria-pressed="'+(i===0)+'">'+k[1]+'</button>'; }).join("")+'</div>'+
+    '<textarea class="fb-t" placeholder="Was stimmt nicht oder fehlt? Abschnitt nennen, z. B. „Dosis ≥ 65 J.: …“"></textarea>'+
+    '<input class="fb-q" type="text" placeholder="Quelle (Fachinfo, Leitlinie, Seite) – optional" autocomplete="off">'+
+    '<div class="fb-row"><button class="btn" data-fbsend="1">Senden</button><span class="fb-st note-soft"></span></div>'+
+    '<p class="hint">Meldungen landen in der Datenbank dieser App. Claude liest sie beim nächsten Update, prüft sie gegen die Quelle und arbeitet sie ein. Keine Patientendaten eintragen.</p></div></details>';
+}
+function voteBlock(id, k){
+  return '<div class="pvote" data-pv="'+id+'|'+k+'"><span>Stimmt die Einstufung?</span><button data-pvote="ok">stimmt</button><button data-pvote="hi">zu hoch</button><button data-pvote="lo">zu niedrig</button></div>';
+}
+
 /* ---------- KI ---------- */
 var AI = { fn:null, ready:false, ctl:null, state:{} };
 function aiInit(){
@@ -515,6 +544,18 @@ function recCard(r, label){
     '<div class="pc"><div class="pc-p"><b>Dafür</b><ul class="fl">'+pro.map(function(x){ return '<li>'+vt(x)+'</li>'; }).join("")+'</ul></div>'+
     (con.length||flags.length?'<div class="pc-c"><b>Beachten</b><ul class="fl">'+con.map(function(x){ return '<li>'+vt(x)+'</li>'; }).join("")+(flags.length?'<li>Profil: '+esc(flags.join(", "))+'</li>':'')+'</ul></div>':'')+'</div></div>';
 }
+/* Stufen statt Rangliste: passt (keine Einwände, von Antworten gestützt oder 1. Wahl/Alternative laut Karte),
+   mit Vorsicht (mindestens ein Einwand aus Antworten oder Kontext), weitere (Reserve, Kombination, nicht gestützt). */
+function algTiers(ev){
+  var fit = [], care = [], more = [];
+  ev.main.forEach(function(r){ if(r.con.length) care.push(r); else if(r.boosted || r.o.r==="1" || r.o.r==="a") fit.push(r); else more.push(r); });
+  return {fit:fit, care:care, more:more};
+}
+function tierRow(r){
+  var o = r.o, pro = (o.why?[o.why]:[]).concat(r.pro);
+  return '<div class="arow"><div class="opt-top">'+optName(r)+(o.off?'<span class="pill off">off-label</span>':'')+'<span class="ev">Karte: '+esc((ROLE[o.r]||[""])[0])+'</span></div>'+(o.dos?'<div class="dose">'+vt(o.dos)+'</div>':'')+
+    (r.con.length?'<ul class="fl con-l">'+r.con.map(function(c){ return '<li>'+vt(c)+'</li>'; }).join("")+'</ul>':'')+(pro.length?'<div class="why">'+vt(pro.slice(0,2).join("; "))+'</div>':'')+'</div>';
+}
 function algResult(a, ev){
   var h = '<section class="alg-res" id="alg-res"><div class="sec-h">Ergebnis nach '+ev.answered+' von '+a.q.length+' Antworten</div>';
   ev.W.forEach(function(w){ h += '<div class="find r"><div class="fa">'+vt(w)+'</div></div>'; });
@@ -528,26 +569,27 @@ function algResult(a, ev){
     return h+'<p class="hint">Abstände und Schritte aus den Wirkstoffkarten (Fachinformation, Kompendium, Pocket Guide). „prüfen“ = nicht in den Quellen belegt.</p></section>';
   }
   if(ev.nmFirst) h += '<div class="nm-first"><b>Zuerst:</b> '+ev.nm.filter(function(r){ return r.boosted; }).map(function(r){ return vt(r.o.t); }).join(" · ")+'</div>';
+  var TR = algTiers(ev);
   if(!ev.main.length) h += '<p class="empty">Bei diesen Antworten bleibt keine medikamentöse Option übrig. Prüfe die ausgeschlossenen Optionen unten.</p>';
-  else if(ev.tie.length>1){
-    var flagsAll = ev.tie.map(function(r){ return profFlags(r.dr); }), allF = uniq([].concat.apply([], flagsAll));
-    var diff = allF.filter(function(f){ return !flagsAll.every(function(fl){ return fl.indexOf(f)>=0; }); });
-    h += '<div class="rec-h"><span class="rb tie">Abwägen</span>'+ev.tie.length+' Optionen liegen gleichauf</div>';
-    var tIds = uniq(ev.tie.map(function(r){ return r.dr; })).filter(hasP);
-    if(tIds.length>=2) h += '<div class="cmp-box"><div class="cmp-h">Worin sie sich unterscheiden</div>'+cmpTable(tIds)+'<p class="hint">'+PNOTE+'</p></div>';
-    else if(diff.length) h += '<p class="hint">Unterschiede im Profil: '+ev.tie.map(function(r,i){ var f=flagsAll[i].filter(function(x){ return diff.indexOf(x)>=0; }); return '<b>'+esc(r.dr&&D[r.dr]?D[r.dr].n:r.o.t)+'</b> '+(f.length?esc(f.join(", ")):"–"); }).join(" · ")+'</p>';
-    h += '<div class="rc-grid">'+ev.tie.map(function(r){ return recCard(r); }).join("")+'</div>';
-  } else {
-    h += '<div class="rec-h"><span class="rb best">Beste Wahl jetzt</span></div>'+recCard(ev.tie[0]);
+  else {
+    h += '<div class="tier-h fit"><span class="tb">Passt zu deinen Angaben</span><span class="tn">'+TR.fit.length+'</span></div>';
+    if(!TR.fit.length) h += '<p class="empty">Keine Option ohne Einschränkung – siehe „Mit Vorsicht“.</p>';
+    else {
+      var fIds = uniq(TR.fit.map(function(r){ return r.dr; })).filter(hasP).slice(0,4);
+      if(fIds.length>=2) h += '<div class="cmp-box"><div class="cmp-h">Worin sie sich unterscheiden</div>'+cmpTable(fIds, {fold: fIds.length>2})+'<p class="hint">'+PNOTE+'</p></div>';
+      h += '<div class="rc-grid">'+TR.fit.slice(0,4).map(function(r){ return recCard(r); }).join("")+'</div>';
+      if(TR.fit.length>4) h += '<div class="list">'+TR.fit.slice(4).map(tierRow).join("")+'</div>';
+    }
+    if(TR.care.length) h += '<div class="tier-h care"><span class="tb">Mit Vorsicht</span><span class="tn">'+TR.care.length+'</span></div><div class="list">'+TR.care.map(tierRow).join("")+'</div>';
+    if(TR.more.length) h += '<div class="tier-h more"><span class="tb">Weitere Optionen der Karte</span><span class="tn">'+TR.more.length+'</span></div><div class="list">'+TR.more.map(tierRow).join("")+'</div>';
   }
-  if(ev.alts.length) h += '<div class="sec-h">Alternativen</div><div class="list">'+ev.alts.concat(ev.rest).map(function(r){ var o=r.o; return '<div class="arow"><div class="opt-top">'+optName(r)+(o.off?'<span class="pill off">off-label</span>':'')+'<span class="ev">Karte: '+esc((ROLE[o.r]||[""])[0])+'</span></div>'+(o.dos?'<div class="dose">'+vt(o.dos)+'</div>':'')+'<div class="why">'+vt((r.pro[0]||o.why||""))+(r.con.length?' <span class="con">· '+vt(r.con[0])+'</span>':'')+'</div></div>'; }).join("")+'</div>';
   var allIds = uniq(ev.main.concat(ev.adj).map(function(r){ return r.dr; })).filter(hasP).slice(0,8);
   if(allIds.length>=2) h += '<details class="acc"><summary>Profil aller Optionen vergleichen · '+allIds.length+'</summary><div class="acc-b">'+pLegend()+cmpTable(allIds,{all:true})+'<p class="hint">Grün hinterlegt: günstigster Wert der Zeile. '+PNOTE+'</p></div></details>';
   if(ev.adj.length) h += '<div class="sec-h">Zusatz / Kombination</div><div class="list">'+ev.adj.map(function(r){ var o=r.o; return '<div class="arow"><div class="opt-top">'+optName(r)+(o.off?'<span class="pill off">off-label</span>':'')+'</div>'+(o.dos?'<div class="dose">'+vt(o.dos)+'</div>':'')+'<div class="why">'+vt(r.pro.length?r.pro.join("; "):(o.why||""))+'</div></div>'; }).join("")+'</div>';
   if(ev.nm.length) h += '<div class="sec-h">Nicht-medikamentös</div><div class="list">'+ev.nm.map(function(r){ return '<div class="arow"><div class="opt-top"><span class="opt-name plain">'+vt(r.o.t)+'</span></div><div class="why">'+vt(r.pro.length?r.pro.join("; "):(r.o.why||""))+'</div></div>'; }).join("")+'</div>';
   if(ev.N.length) h += '<div class="sec-h">Vorgehen</div><ul class="fl">'+ev.N.map(function(n){ return '<li>'+vt(n)+'</li>'; }).join("")+'</ul>';
   if(ev.ex.length) h += '<details class="acc"><summary>Ausgeschlossen · '+ev.ex.length+'</summary><div class="acc-b"><ul class="fl">'+ev.ex.map(function(r){ return '<li><b>'+esc(r.dr&&D[r.dr]?D[r.dr].n:r.o.t)+':</b> '+vt(r.x)+'</li>'; }).join("")+'</ul></div></details>';
-  h += '<p class="hint">Gewichtung aus Rolle und Evidenz der Karte, deinen Antworten und den Kontextangaben der Wirkstoffkarten. Eine Entscheidungshilfe, keine Verordnung: Dosis und KI in der Fachinformation prüfen.</p></section>';
+  h += '<p class="hint">Keine Rangliste: Die Stufen ergeben sich aus der Rolle laut Karte (Leitlinie, Lehrbuch), deinen Antworten und den Kontextangaben der Wirkstoffkarten. Innerhalb einer Stufe zuerst die Optionen mit Rolle „1. Wahl“. Die Abwägung bleibt ärztlich; Dosis und KI in der Fachinformation prüfen.</p></section>';
   return h;
 }
 function sheetAlg(id){
@@ -569,7 +611,9 @@ function sheetAlg(id){
     }
     h += '<div class="aq'+(cur!=null?' done':'')+(q===nextQ?' next':'')+(qo?' qopen':'')+'"><div class="aq-t"><span class="aq-n">'+(qi+1)+'</span><span class="aq-q">'+esc(q.t)+'</span>'+(info?'<button class="qi" data-qi="'+qk+'" aria-expanded="'+(!!qo)+'" aria-controls="qp-'+q.id+'" aria-label="Hintergrund zu dieser Frage" title="Hintergrund: welche Mittel jede Antwort bevorzugt und warum">i</button>':'')+'</div><div class="aq-a">'+q.a.map(function(o,i){ return '<button class="ans" data-aq="'+q.id+'" data-ai="'+i+'" aria-pressed="'+(cur===i)+'">'+esc(o.t)+'</button>'; }).join("")+'</div>'+(info?'<div class="qpop" id="qp-'+q.id+'">'+qInfo(a,q)+'</div>':'')+'</div>'; });
   h += algResult(a, ev);
-  var top = ev.umst ? (ev.N.length||ev.W.length ? "Vorgehen steht" : "") : (ev.tie.length>1 ? "Abwägen: "+ev.tie.map(function(r){ return r.dr&&D[r.dr]?D[r.dr].n:r.o.t.split(" ")[0]; }).join(" · ") : ev.tie[0] ? "Beste Wahl: "+(ev.tie[0].dr&&D[ev.tie[0].dr]?D[ev.tie[0].dr].n:ev.tie[0].o.t.split(" ")[0]) : "");
+  var top = ev.umst ? (ev.N.length||ev.W.length ? "Vorgehen steht" : "") : (function(){ var TR = algTiers(ev), nm = function(r){ return r.dr&&D[r.dr]?D[r.dr].n:r.o.t.split(" ")[0]; };
+    if(TR.fit.length) return "Passt: "+TR.fit.slice(0,3).map(nm).join(" · ")+(TR.fit.length>3?" +"+(TR.fit.length-3):"");
+    return TR.care.length ? "Nur mit Vorsicht: "+TR.care.slice(0,2).map(nm).join(" · ") : ""; })();
   if(top) h += '<button class="alg-mini" data-jump="alg-res"><span>'+esc(top)+'</span><span aria-hidden="true">↓</span></button>';
   return h;
 }
@@ -581,14 +625,17 @@ var PPH = {AD:"antidepressiv",AP:"antipsychotisch",ST:"antimanisch",AX:"anxiolyt
 var PFOP = {"0":["keine",function(v){ return v===0; }], le1:["höchstens gering",function(v){ return v<=1; }], ge1:["vorhanden",function(v){ return v>=1; }], ge2:["mind. deutlich",function(v){ return v>=2; }], "3":["stark",function(v){ return v===3; }]};
 var PPRE = [["AD","ge2","antidepressiv"],["AP","ge2","antipsychotisch"],["SL","ge2","schlafanstoßend"],["GEW","0","gewichtsneutral"],["AC","0","nicht anticholinerg"],["SED","0","nicht sedierend"],["QT","le1","QTc-arm"],["SEX","le1","wenig sexuelle NW"],["ABH","0","ohne Abhängigkeit"]];
 function hasP(id){ return !!(id && PM[id] && D[id]); }
-function pv(id,k){ if(k && k.charAt(1)===":") return PM[id] ? rxv(id,k.slice(2)) : null; var r = PM[id]; return r ? r[PCI[k]] : null; }
+function pv(id,k){ if(k && k.charAt(1)===":") return PM[id] ? rxv(id,k.slice(2)) : null; var q = pSrc(id,k); if(q) return q.v; var r = PM[id]; return r ? r[PCI[k]] : null; }
+function pSrc(id,k){ var S = window.PSRC||{}; return S[id] && S[id][k] || null; }
 function pdot(v,c){ var lab = c.t+": "+PLV[v]; return '<span class="pd v'+v+(c.w?' w':'')+(c.r?' r':'')+'" role="img" title="'+esc(lab)+'" aria-label="'+esc(lab)+'"></span>'; }
 function pLegend(withR){
   return '<div class="leg"><span class="leg-g"><b>Wirkung</b>'+[1,2,3].map(function(v){ return '<span class="leg-i">'+pdot(v,{t:"Wirkung",w:1})+PLV[v]+'</span>'; }).join("")+'</span>'+
     '<span class="leg-g"><b>Nebenwirkung</b>'+[0,1,2,3].map(function(v){ return '<span class="leg-i">'+pdot(v,{t:"Nebenwirkung"})+PLV[v]+'</span>'; }).join("")+'</span>'+
     (withR?'<span class="leg-g"><b>Rezeptor</b>'+[1,2,3].map(function(v){ return '<span class="leg-i">'+pdot(v,{t:"Rezeptor",r:1})+PLV[v]+'</span>'; }).join("")+'</span>':'')+'</div>';
 }
-var PNOTE = 'Relative Einstufung 0–3, eigene Synthese aus den Karten und Standardprofilen der Lehrbücher. Keine Messgröße: Dosis, Einzelfall und Fachinformation entscheiden.';
+var PNOTE = 'Relative Einstufung 0–3, eigene Schätzung aus den Karten und Standardprofilen der Lehrbücher, noch nicht gegen veröffentlichte Skalen geprüft. Keine Messgröße: Dosis, Einzelfall und Fachinformation entscheiden.';
+function estNote(){ var n = 0; Object.keys(window.PSRC||{}).forEach(function(id){ n += Object.keys(PSRC[id]).length; });
+  return '<div class="est-note"><b>≈ Schätzung</b><span>Die Punkte sind meine eigene Einstufung, keine Werte aus veröffentlichten Skalen'+(n?' (außer '+n+' mit ✓ und Quelle)':'')+'. Punkt antippen zeigt die Herkunft; dort kannst du die Einstufung bestätigen oder als zu hoch/zu niedrig melden.</span></div>'; }
 /* Vergleichstabelle für 2–8 Wirkstoffe: nur Eigenschaften, in denen sie sich unterscheiden (opt.all: alle außer überall 0). */
 function cmpTable(ids, opt){
   opt = opt || {}; ids = uniq(ids).filter(hasP);
@@ -606,6 +653,7 @@ function cmpTable(ids, opt){
     h += '<tr><th class="cl" scope="row">'+esc(r.c.t)+'</th>'+r.vs.map(function(v,i){ return '<td data-pc="'+ids[i]+'|'+r.c.k+'" title="'+esc(D[ids[i]].n+' · '+why(ids[i],r.c.k).t)+'" class="'+(!w && r.sp>0 && v===good?'gd':'')+'">'+pdot(v,r.c)+(words?'<span class="pl">'+PLV[v]+'</span>':'')+'</td>'; }).join("")+'</tr>';
   });
   h += '</tbody></table></div>';
+  if(opt.fold && show.length) h = '<details class="cmp-tbl"><summary>Punkt für Punkt als Tabelle</summary>'+h+'</details>';
   if(!show.length) h = '<p class="hint">Im groben Profil gleich. Unterschiede dann in Dosis, Interaktionen und Karte.</p>';
   if(!opt.all){
     var sum = ids.map(function(id,i){
@@ -662,7 +710,7 @@ function profCard(id){
   var rx = (window.PRXC||[]).map(function(r){ return [r[0], rxv(id,r[0]), r[1]]; }).filter(function(x){ return x[1]>0; }).sort(function(a,b){ return b[1]-a[1]; });
   var rxh = rx.length ? '<div class="pc-g rxg"><div class="pc-gh">Rezeptorprofil · daraus folgt</div>'+rx.map(function(x){ var L = rxLeads(id,x[0]); return '<div class="pc-r">'+pdot(x[1],{t:x[2],r:1})+'<span>'+esc(x[2])+'</span><span class="pl">'+PLV[x[1]]+'</span>'+(L.length?'<div class="pc-why">→ '+esc(L.join(", "))+'</div>':'')+'</div>'; }).join("")+'</div>' : '';
   var zero = PC.filter(function(c){ return !c.w && pv(id,c.k)===0; }).map(function(c){ return PPH[c.k]||c.s; });
-  return '<div class="pcard">'+rxh+grp(true)+grp(false)+'</div>'+(zero.length?'<p class="hint">Keine/kaum: '+esc(zero.join(", "))+'</p>':'')+
+  return estNote()+'<div class="pcard">'+rxh+grp(true)+grp(false)+'</div>'+(zero.length?'<p class="hint">Keine/kaum: '+esc(zero.join(", "))+'</p>':'')+
     '<p class="hint">'+PNOTE+' Rezeptorstufen: klinisch relevante Wirkung bei üblicher Dosis. Kursiv: substanzspezifische Herkunft.</p><button class="btn ghost" data-pcmp="'+id+'">In der Profiltabelle vergleichen</button>';
 }
 /* Profiltabelle */
@@ -704,6 +752,9 @@ function colOpts(sel){ return '<optgroup label="Eigenschaften">'+PC.map(function
 function colGroup(c){ return c.r ? "r" : c.w ? "w" : "n"; }
 var CGN = {w:"Wirkung", n:"Nebenwirkungen", r:"Rezeptoren / Mechanismen"};
 function viewProfile(){
+  return viewProfile0().replace('<div class="pv-intro">', estNote()+'<div class="pv-intro">');
+}
+function viewProfile0(){
   var R = pRows(), cols = PST.set==="r" ? RXCOLS.slice() : PC.filter(function(c){ return PST.set==="a" || (PST.set==="w" ? c.w : !c.w); });
   if(R.sk && !cols.some(function(c){ return c.k===R.sk; })){ var sc = colByKey(R.sk); if(sc) cols.push(sc); }
   var hl = R.P.hl, skc = colByKey(R.sk);
@@ -727,7 +778,7 @@ function viewProfile(){
     cols.map(function(c,i){ var on = R.sk===c.k, cls = colGroup(c)+(on?' srt':'')+(hl.indexOf(c.k)>=0?' hl':'')+(sep(i)?' gsep':''); return '<th class="'+cls+'" aria-sort="'+(on?(R.sd<0?"descending":"ascending"):"none")+'"><button data-psort="'+c.k+'" title="'+esc(c.t)+' – nach Stärke sortieren"><span>'+esc(c.s)+(on?(R.sd<0?" ↓":" ↑"):"")+'</span></button></th>'; }).join("")+'</tr></thead><tbody>';
   h += R.ids.map(function(id){ var d = D[id];
     return '<tr data-open="drug:'+id+'"><th class="pn" scope="row"><button data-open="drug:'+id+'">'+ava(id,'sm')+'<span class="pn-tx"><span class="pn-n">'+esc(d.n)+'</span><span class="pn-k">'+esc((clsOf(id)||{}).n||d.g||"")+'</span></span></button></th>'+
-      cols.map(function(c,i){ var cls = (R.sk===c.k?'srt':'')+(hl.indexOf(c.k)>=0?' hl':'')+(sep(i)?' gsep':''); return '<td data-pc="'+id+'|'+c.k+'"'+(cls.trim()?' class="'+cls.trim()+'"':'')+'>'+pdot(pv(id,c.k),c)+'</td>'; }).join("")+'</tr>'; }).join("");
+      cols.map(function(c,i){ var cls = (R.sk===c.k?'srt':'')+(hl.indexOf(c.k)>=0?' hl':'')+(sep(i)?' gsep':''); return '<td data-pc="'+id+'|'+c.k+'"'+(cls.trim()?' class="'+cls.trim()+'"':'')+'>'+pdot(pv(id,c.k),c)+(pSrc(id,c.k)?'<i class="srcm" title="mit Quelle">✓</i>':'')+'</td>'; }).join("")+'</tr>'; }).join("");
   h += '</tbody></table></div><p class="foot">'+PNOTE+' Rezeptorstufen: klinisch relevante Wirkung bei üblicher Dosis, keine Ki-Werte. Nicht enthalten: Komedikation und Kurzeinträge ohne psychiatrische Indikation.</p></div>';
   return h;
 }
@@ -817,7 +868,8 @@ function pExplain(id, k){
   if(c.r){ var r = k.slice(2), mine = rxLeads(id,r);
     h = '<p class="pexp-l"><b>'+esc(c.t)+':</b> '+PLV[v]+'</p><p>'+(v ? 'Erklärt hier: '+esc(mine.length ? mine.join(", ") : "keine der eingestuften Eigenschaften allein") : 'Keine relevante Wirkung an diesem Ziel.')+'</p><p class="hint">Typische Folgen dieses Mechanismus: '+esc(rxTypical(r).join(", ")||"–")+'</p>';
   } else { var w = why(id,k);
-    h = '<p class="pexp-l"><b>'+esc(c.t)+':</b> '+PLV[v]+'</p><p><span class="why-k">'+(w.s==="o"?"Substanzspezifisch":w.s==="r"?"Mechanismus":w.s==="z"?"Warum kaum":"Herkunft")+':</span> '+esc(w.t)+'</p>'; }
+    var sq = pSrc(id,k);
+    h = '<p class="pexp-l"><b>'+esc(c.t)+':</b> '+PLV[v]+' <span class="'+(sq?'src-b':'est-b')+'">'+(sq?'✓ '+esc(sq.q):'≈ eigene Schätzung')+'</span></p><p><span class="why-k">'+(w.s==="o"?"Substanzspezifisch":w.s==="r"?"Mechanismus":w.s==="z"?"Warum kaum":"Herkunft")+':</span> '+esc(w.t)+'</p>'+voteBlock(id,k); }
   return '<div class="pexp-h">'+ava(id,'sm')+'<b>'+esc(D[id].n)+'</b><button class="pexp-x" data-pexp-x aria-label="Schließen">×</button></div>'+h+'<button class="lnk" data-open="drug:'+id+'">Karte öffnen</button>';
 }
 function showExplain(id, k){
@@ -998,7 +1050,7 @@ function renderSheet(){
   var body = top.type==="alg" ? sheetAlg(top.id) : top.type==="sit" ? sheetSit(top.id) : top.type==="drug" ? sheetDrug(top.id) : top.type==="calc" ? '<div id="calc-'+top.id+'"></div>' : sheetInfo();
   host.innerHTML = '<div class="sheet" role="dialog" aria-label="'+esc(titleOf(top.type,top.id))+'"><div class="sheet-bar"><div class="bar-in"><button class="iconbtn" id="back">‹ Zurück</button><span class="bar-t" aria-hidden="true">'+esc(titleOf(top.type,top.id))+'</span>'+
     (top.type!=="info"?'<button class="iconbtn" id="favbtn" aria-pressed="'+fav+'" aria-label="'+(fav?"Angeheftet":"Anheften")+'">'+(fav?"★":"☆")+'<span class="fav-l">'+(fav?" Angeheftet":" Anheften")+'</span></button>':'<span></span>')+'</div></div><div class="sheet-body">'+
-    (top.type==="calc"?'<div class="eyebrow">Rechner</div><h2 class="title">'+esc(titleOf("calc",top.id))+'</h2>':'')+body+'</div></div>';
+    (top.type==="calc"?'<div class="eyebrow">Rechner</div><h2 class="title">'+esc(titleOf("calc",top.id))+'</h2>':'')+body+(top.type!=="info"?fbBlock(k, titleOf(top.type,top.id)):'')+'</div></div>';
   document.body.style.overflow = WIDE.matches ? "" : "hidden";
   if(top.type==="calc") CALC_MOUNT[top.id]($("#calc-"+top.id, host));
   var ta = $("#note"); if(ta){ ta.value = Notes.get(ta.dataset.key); updateNoteHint(); }
@@ -1155,7 +1207,9 @@ function sheetInfo(){
   '<div class="card"><p><b>Was das ist.</b> Eine persönliche Taschenreferenz für Entscheidungen im Stationsalltag. Sie ersetzt weder Fachinformation noch Leitlinie noch ärztliche Prüfung im Einzelfall.</p><p>'+esc(STAND)+'</p></div>'+
   '<div class="card"><p><b>Markierungen</b></p><p><span class="verify">prüfen</span> Angabe, die ich nicht sicher belegen kann: vor Verlass gegen Fachinfo prüfen.</p><p><span class="pill off">off-label</span> nicht von der deutschen Zulassung gedeckt.</p><p><span class="role rint">International</span> in Deutschland nicht verfügbar oder nicht etabliert.</p><p class="mono">●●● hoch · ●●○ mittel · ●○○ niedrig · ○○○ Konsens</p><p class="hint">Evidenzpunkte sind bis zum Leitlinienabgleich eine eigene Einschätzung.</p></div>'+
   '<div class="card"><p><b>Quellenkürzel</b></p><p>K Benkert/Hippius Kompendium 2021 · P Benkert Pocket Guide 2021 · Dr Dreher 2021 · RHB Rote-Hand-Brief · FI Fachinformation · S3 AWMF-S3-Leitlinie (Alkohol 2021, Medikamentenbezogene Störungen, Schizophrenie, Insomnie, BPS 2022, Demenzen, Methamphetamin 2016) · NVL Nationale VersorgungsLeitlinie Depression · AGNP TDM-Konsensus (Hiemke et al.) · PRISCUS 2.0 · Embryotox · CredibleMeds (QT) · Ashton-Manual (BZD-Äquivalenzen) · BÄK-Richtlinie Substitution · WHO ATC/DDD · Benkert/Hippius, Kompendium 13. Aufl. 2021 · Benkert, Pocket Guide 6. Aufl. 2021 · Dreher, Psychopharmakotherapie griffbereit 5. Aufl. 2021.</p></div>'+
+  '<div class="card"><p><b>Deine Rückmeldungen</b> · <span id="fb-count">'+esc(fbCountText())+'</span></p><p class="hint">Jede Karte hat unten „Fehler melden“. Profilpunkte bewertest du direkt beim Antippen eines Punkts. Claude liest die Meldungen beim nächsten Update und setzt sie auf „eingearbeitet“.</p></div>'+
   pruefInfo()+
+  '<div class="card"><p><b>Version 3.4 vom 09.10.2026 · Sicherer</b></p><ul class="fl"><li>Entscheidungshilfen ohne Rangliste: statt „Beste Wahl“ drei Stufen – „Passt zu deinen Angaben“, „Mit Vorsicht“ (mit allen Einwänden), „Weitere Optionen der Karte“. Die Punktgewichtung bestimmt nur noch die Reihenfolge innerhalb einer Stufe.</li><li>Profilpunkte sind sichtbar als eigene Schätzung gekennzeichnet (≈). Belegte Werte aus veröffentlichten Skalen bekommen ✓ und Quelle, sobald die Quellen vorliegen.</li><li>Jede Karte hat unten „Fehler melden oder Korrektur vorschlagen“; jeder Profilpunkt lässt sich als „stimmt / zu hoch / zu niedrig“ bewerten. Die Meldungen landen in der Datenbank der App und werden beim nächsten Update eingearbeitet.</li><li>Quelltext, Build und alle Prüfungen liegen jetzt im Repository (Branch psychopharmaka-kompass) und laufen bei jeder Änderung automatisch.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.3 vom 09.10.2026 · Übersichtlicher</b></p><ul class="fl"><li>Fünf statt sechs Bereiche: Der Profilvergleich ist jetzt Teil von „Wirkstoffe“ (Liste · Klassen · Vergleich).</li><li>Jeder Bereich hat ein Symbol und eine Farbe (Schlaf, Anspannung, EPMS/Notfall, Entzug, Diagnosen) – auf der Startseite, in allen Listen und in der Suche.</li><li>Situationen und Suche: Die Entscheidungshilfe steht als Knopf „Entscheiden“ direkt neben der Situation, statt doppelt in der Liste.</li><li>Entscheidungshilfen: Beantwortete Fragen schrumpfen auf eine Zeile mit der gewählten Antwort (antippen zum Ändern), die nächste offene Frage ist hervorgehoben, Patientenangaben kompakt.</li><li>Wirkstoffkarten und Rechner: Zugeklappte Abschnitte zeigen eine Vorschau ihres Inhalts.</li><li>Startseite: „Weiter mit“ als waagrechte Leiste; am Computer zeigt die rechte Fläche die zuletzt geöffneten Karten.</li><li>Fehler behoben: Eingetippter Suchtext war kaum lesbar.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.2 vom 08.10.2026 · Gesichter und Herkunft</b></p><ul class="fl"><li>Jede Wirkstoffklasse hat eine eigene Farbe, ein Symbol und eine Persona (z. B. SSRI „Die Pumpen-Schließer“, Aripiprazol-Klasse „Die Thermostate“). Jeder Wirkstoff trägt ein Kürzel wie im Periodensystem (Mi, Qu, Li) und ein Merkbild, das Mechanismus und Klinik verbindet.</li><li>Wirkstoffe: neue Ansicht „Klassen-Atlas“ mit allen 31 Klassen und Merkbildern.</li><li>Herkunft jeder Eigenschaft: Rezeptorprofil je Wirkstoff (33 Ziele) und Regeln, welcher Mechanismus welche Eigenschaft erzeugt (z. B. Gewicht ← H1- und 5-HT2C-Blockade), dazu substanzspezifische Ursachen (z. B. Lamotrigin-SJS: HLA, schnelle Aufdosierung, Valproat). Sichtbar in der Wirkstoffkarte, in jedem Vergleich („Woher die Unterschiede kommen“) und per Antippen eines Punkts in der Profiltabelle.</li><li>Profiltabelle: Spaltensatz „Rezeptoren“, sortierbar (z. B. nach H1); die Suche versteht Rezeptoren („H1“, „D2“, „SERT“).</li><li>Korrektur der Einstufung: QTc bei Donepezil höher als bei Galantamin.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.1 vom 08.10.2026 · Hintergrund und Profile</b></p><ul class="fl"><li>Entscheidungshilfen: Jede Frage hat einen Info-Punkt (i). Am Computer beim Darüberfahren, auf dem Handy per Antippen: welche Mittel jede Antwort stark bevorzugt, bevorzugt, abwertet oder ausschließt, jeweils mit Begründung aus der Karte. Mehrere bevorzugte Mittel lassen sich dort direkt im Profil vergleichen.</li><li>Gleichstand: Liegen Optionen gleichauf, zeigt eine Tabelle nebeneinander, worin sie sich unterscheiden (z. B. anticholinerg, Gewicht, Sedierung), mit Kurzfazit je Mittel. Darunter lässt sich das Profil aller Optionen vergleichen. Umstellungen zeigen, was sich mit dem Wechsel ändert.</li><li>Neuer Bereich „Profile“: 74 Wirkstoffe mit 7 Wirkungs- und 19 Nebenwirkungsmerkmalen als farbige Punkte. Durchsuchbar nach Name, Klasse und Eigenschaft („ohne Gewicht“, „nicht anticholinerg“), Schnellfilter, eigene Filter, Sortierung nach Stärke per Spaltenkopf.</li><li>Wirkstoffkarten: Abschnitt „Profil auf einen Blick“ mit Sprung in den Vergleich.</li><li>Die Punkte sind eine relative Einstufung (eigene Synthese aus Karten und Lehrbuchprofilen), keine Messgröße.</li></ul></div>'+
@@ -1293,7 +1347,7 @@ function saveOffline(){
   if(!window.claude || !window.claude.use){ toast("Du nutzt bereits die Offline-Kopie."); return; }
   window.claude.use("downloads").then(function(dl){
     if(!dl){ toast("Speichern ist in dieser Ansicht nicht verfügbar."); return; }
-    return dl.save({filename:"Psychopharmaka-Kompass_v3.3_2026-10-09_offline.html", data:buildOffline()}).then(function(r){ if(r.status==="saved") toast("Offline-Kopie gespeichert"); }, function(e){ if(e.code!=="declined") toast("Nicht gespeichert: "+e.code); });
+    return dl.save({filename:"Psychopharmaka-Kompass_v3.4_2026-10-09_offline.html", data:buildOffline()}).then(function(r){ if(r.status==="saved") toast("Offline-Kopie gespeichert"); }, function(e){ if(e.code!=="declined") toast("Nicht gespeichert: "+e.code); });
   });
 }
 
@@ -1323,6 +1377,16 @@ function bind(){
     var qed = t.closest("[data-qedit]"); if(qed){ QEDIT[qed.dataset.qedit] = true; rerenderSheetKeep(); return; }
     var pex = $("#pexp"); if(pex && !pex.hidden && (!t.closest("#pexp") || t.closest("[data-open]")) && !t.closest("[data-pc]")) pex.hidden = true;
     if(t.closest("[data-pexp-x]")){ hideExplain(); return; }
+    var fbk = t.closest("[data-fbkind]"); if(fbk){ $$("[data-fbkind]", fbk.parentNode).forEach(function(b){ b.setAttribute("aria-pressed", b===fbk); }); return; }
+    if(t.closest("[data-fbsend]")){ var fbx = t.closest(".fb-b"), txt = $(".fb-t", fbx).value.trim(), stl = $(".fb-st", fbx);
+      if(!txt){ stl.textContent = "Bitte kurz beschreiben, was nicht stimmt."; $(".fb-t", fbx).focus(); return; }
+      var kd = $('[data-fbkind][aria-pressed="true"]', fbx); stl.textContent = "…";
+      FB.send({key:fbx.dataset.fbkey, title:fbx.dataset.fbtitle, kind:kd?kd.dataset.fbkind:"fehler", text:txt.slice(0,2000), src:$(".fb-q", fbx).value.trim().slice(0,300)}).then(function(m){ stl.textContent = m; $(".fb-t", fbx).value = ""; $(".fb-q", fbx).value = ""; });
+      return; }
+    var pvb = t.closest("[data-pvote]");
+    if(pvb){ var pvw = pvb.closest("[data-pv]"), pp = pvw.dataset.pv.split("|"), cc = colByKey(pp[1]);
+      FB.send({key:"prof:"+pp[0]+":"+pp[1], title:D[pp[0]].n+" · "+(cc?cc.t:pp[1]), kind:"profil", vote:pvb.dataset.pvote, value:pv(pp[0],pp[1])}).then(function(m){ pvw.innerHTML = '<span class="pvote-done">'+(pvb.dataset.pvote==="ok"?"Als stimmig vermerkt.":"Gemeldet.")+' '+esc(m.split(" – ")[0])+'</span>'; });
+      return; }
     var pcc = t.closest("[data-pc]");
     if(pcc){ var pcp = pcc.dataset.pc.split("|"); showExplain(pcp[0], pcp[1]); return; }
     var dvb = t.closest("[data-dview]"); if(dvb){ st.drugView = dvb.dataset.dview; LS.set("dview", st.drugView); renderMain(); return; }
@@ -1412,5 +1476,5 @@ shell(); renderCtx(); renderTabs(); renderMain(); renderPane(); bind();
     else if(y < last - 6 || y < 40){ top.classList.remove("compact"); }
     last = y; }); }, {passive:true});
 })();
-Notes.init(); aiInit();
+Notes.init(); FB.init(); aiInit();
 })();

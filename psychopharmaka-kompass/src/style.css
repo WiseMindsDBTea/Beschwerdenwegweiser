@@ -752,3 +752,35 @@ details[open]>summary .acc-pv{display:none}
 .pv-intro .note-soft{margin:2px 0 8px}
 
 @media (min-width:1100px){.pe-rec .row{color:var(--ink)}}
+
+/* ================= v3.4: Sicherer ================= */
+.tier-h{display:flex;align-items:center;gap:8px;margin:16px 0 6px}
+.tier-h .tb{font:600 11px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:5px 8px;border-radius:6px}
+.tier-h.fit .tb{background:var(--ok-soft);color:var(--ok)}
+.tier-h.care .tb{background:var(--warn-soft);color:var(--warn)}
+.tier-h.more .tb{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.tier-h .tn{font:600 12px/1 var(--f-mono);color:var(--muted)}
+.rc-grid .rc{border-color:var(--ok)}
+.con-l{margin:4px 0 2px;font-size:13.5px}
+.con-l>li::before{background:var(--warn)!important}
+.est-note{display:flex;gap:10px;align-items:flex-start;margin:6px 0 10px;padding:9px 12px;border-radius:10px;background:var(--warn-soft);color:var(--ink);font-size:13px;line-height:1.45}
+.est-note b{flex:none;font:600 11px/1.6 var(--f-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--warn)}
+.est-b,.src-b{display:inline-block;margin-left:6px;font:600 10.5px/1 var(--f-mono);letter-spacing:.03em;padding:3px 6px;border-radius:5px;vertical-align:1px}
+.est-b{background:var(--warn-soft);color:var(--warn)}
+.src-b{background:var(--ok-soft);color:var(--ok)}
+.srcm{font-style:normal;font-size:9px;color:var(--ok);margin-left:1px;vertical-align:top}
+.pvote{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 6px;font-size:13px;color:var(--muted)}
+.pvote button{min-height:34px;border:1px solid var(--ctl);background:var(--surface-2);border-radius:999px;padding:3px 11px;font-size:13px;color:var(--ink)}
+.pvote-done{color:var(--ok);font-weight:600}
+details.fb{margin:22px 0 8px;border-top:1px solid var(--line);padding-top:10px}
+details.fb>summary{list-style:none;cursor:pointer;color:var(--muted);font-size:13.5px;font-weight:600;padding:6px 0}
+details.fb>summary::-webkit-details-marker{display:none}
+details.fb>summary::before{content:"⚑ ";color:var(--warn)}
+.fb-b{display:flex;flex-direction:column;gap:8px;padding:6px 0}
+.fb-b textarea{min-height:96px;height:auto;padding:8px 10px;font-size:15px}
+.fb-b .fb-q{height:42px;border-radius:10px;border:1.5px solid var(--ctl);background:var(--surface-2);padding:0 10px;font-size:15px;width:100%}
+.fb-k button{min-height:34px}
+.fb-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cmp-tbl>summary{cursor:pointer;font-weight:600;font-size:13px;color:var(--accent);padding:4px 0;list-style:none}
+.cmp-tbl>summary::-webkit-details-marker{display:none}
+.cmp-tbl>summary::before{content:"▸ "}.cmp-tbl[open]>summary::before{content:"▾ "}
