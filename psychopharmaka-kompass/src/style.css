@@ -797,3 +797,20 @@ details.fb>summary::before{content:"⚑ ";color:var(--warn)}
 .acb-i.s2{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
 .acb-more{margin:8px 0 0;box-shadow:none}
 .acb-tag{display:inline-block;margin-top:6px;font:600 11px/1 var(--f-mono);letter-spacing:.03em;padding:5px 8px;border-radius:6px;background:var(--warn-soft);color:var(--warn)}
+
+/* v3.6: belegte Listen */
+.stags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.stag{display:inline-block;font:600 10.5px/1.25 var(--f-mono);letter-spacing:.02em;padding:4px 7px;border-radius:6px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.stag.acb,.stag.pim{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.stag.qt.qKR{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.stag.qt.qPR{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.stag.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.pbox{margin:10px 0 4px}
+.acb-i.qKR{background:var(--bad-soft);border-color:transparent;color:var(--bad)}
+.acb-i.qPR{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
+.qt-box{border-left:4px solid var(--bad)}
+.acb-n.qtn{background:var(--bad-soft);color:var(--bad)}
+.pr-box{border-left:4px solid var(--info)}
+.acb-n.prn{background:var(--info-soft);color:var(--info)}
+.pr-box .fl{margin:8px 0 4px;font-size:14px}
+.pr-hint{margin:6px 2px 10px}

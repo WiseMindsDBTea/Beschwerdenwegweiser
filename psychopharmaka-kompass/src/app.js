@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var D = window.D, SIT = window.SIT, RULES = window.RULES || [];
-var VERSION = "v3.5 · 09.10.2026";
+var VERSION = "v3.6 · 09.10.2026";
 var STAND = "Stand v1.2 (07.10.2026): Etappe 2 ergänzt 18 Diagnose-Algorithmen und 41 volle Wirkstoffkarten, geschrieben aus Benkert-Kompendium 2021, Pocket Guide 2021, Dreher 2021, Fachinformationen, Rote-Hand-Briefen und den gelesenen Leitlinienteilen (Stand je Karte). Etappe-1-Karten wie in v1.1 abgeglichen. Nicht belegbare Angaben bleiben als „prüfen“ markiert.";
 var AREAS = {schlaf:"Schlaf", spann:"Anspannung & Agitation", epms:"EPMS & Notfälle", entzug:"Entzug", dep:"Depression", angst:"Angst & Zwang", bip:"Bipolare Störung", schiz:"Schizophrenie-Spektrum", bps:"Borderline (BPS)", adhs:"ADHS", ptbs:"PTBS", demenz:"Demenz"};
 var AREA_SHORT = {spann:"Anspannung", epms:"Notfall", schiz:"Schizophrenie", bip:"Bipolar", bps:"Borderline"};
@@ -522,6 +522,7 @@ function algEval(a, stt){
     if(c[0]==="r"){ if(!r.x) r.x = CTXL[k]+": "+c[1]; }
     else if(c[0]==="y"){ r.score-=10; r.con.push(CTXL[k]+": "+c[1]); }
     else if(c[0]==="g"){ r.score+=3; r.pro.push(CTXL[k]+": "+c[1]); } }); });
+  if(ctx.indexOf("alt")>=0 && window.PRISCUS) R.forEach(function(r){ var e = r.dr && PRISCUS.pim[r.dr]; if(e) r.con.push("PRISCUS 2.0: potenziell inadäquat ≥ 65 J."+(e.c?" ("+e.c+")":"")+(e.alt?"; Alternativen laut Liste: "+e.alt:"")); });
   R.forEach(function(r){ r.pro=uniq(r.pro); r.con=uniq(r.con); });
   var by = function(x,y){ return y.score-x.score; };
   var ok = R.filter(function(r){ return !r.x; }), ex = R.filter(function(r){ return r.x; });
@@ -621,7 +622,7 @@ function sheetAlg(id){
 var PC = window.PCOLS || [], PM = window.PROFM || {}, PCI = {};
 PC.forEach(function(c,i){ PCI[c.k] = i; });
 var PLV = ["keine/kaum","gering","deutlich","stark"];
-var PPH = {AD:"antidepressiv",AP:"antipsychotisch",ST:"antimanisch",AX:"anxiolytisch",SL:"schlafanstoßend",AN:"antriebssteigernd",KG:"prokognitiv",SED:"Sedierung",GEW:"Gewichtszunahme",AC:"anticholinerg",QT:"QTc-Verlängerung",EPS:"EPS/Akathisie",PRL:"Prolaktin",KRL:"Orthostase/Bradykardie",SEX:"sexuelle NW",SER:"serotonerg",ABH:"Abhängigkeit",KR:"Krampfrisiko",ATM:"Atemdepression",BB:"Blutbildrisiko",LEB:"Leberrisiko",HAUT:"Hautreaktionen",BL:"Blutungsrisiko",NA:"Hyponatriämie",GI:"GI-Beschwerden",IA:"Interaktionen"};
+var PPH = {AD:"antidepressiv",AP:"antipsychotisch",ST:"antimanisch",AX:"anxiolytisch",SL:"schlafanstoßend",AN:"antriebssteigernd",KG:"prokognitiv",SED:"Sedierung",GEW:"Gewichtszunahme",AC:"anticholinerg",QT:"QTc-/Torsade-Risiko",EPS:"EPS/Akathisie",PRL:"Prolaktin",KRL:"Orthostase/Bradykardie",SEX:"sexuelle NW",SER:"serotonerg",ABH:"Abhängigkeit",KR:"Krampfrisiko",ATM:"Atemdepression",BB:"Blutbildrisiko",LEB:"Leberrisiko",HAUT:"Hautreaktionen",BL:"Blutungsrisiko",NA:"Hyponatriämie",GI:"GI-Beschwerden",IA:"Interaktionen"};
 var PFOP = {"0":["keine",function(v){ return v===0; }], le1:["höchstens gering",function(v){ return v<=1; }], ge1:["vorhanden",function(v){ return v>=1; }], ge2:["mind. deutlich",function(v){ return v>=2; }], "3":["stark",function(v){ return v===3; }]};
 var PPRE = [["AD","ge2","antidepressiv"],["AP","ge2","antipsychotisch"],["SL","ge2","schlafanstoßend"],["GEW","0","gewichtsneutral"],["AC","0","nicht anticholinerg"],["SED","0","nicht sedierend"],["QT","le1","QTc-arm"],["SEX","le1","wenig sexuelle NW"],["ABH","0","ohne Abhängigkeit"]];
 function hasP(id){ return !!(id && PM[id] && D[id]); }
@@ -1005,6 +1006,38 @@ function viewDrugs(){
   if(kom.length) h += '<div class="sec-h">Somatische Komedikation · '+kom.length+'</div><div class="list">'+lettered(kom)+'</div><p class="foot">Komedikation ist als Kurzeintrag für den Interaktions-Check angelegt.</p>';
   return h;
 }
+/* Belegte Listen im Kopf der Wirkstoffkarte: ACB, CredibleMeds, PRISCUS 2.0 */
+function srcTags(id){
+  var t = [], A = window.ACB, C = window.CREDMEDS, P = window.PRISCUS;
+  if(A && A.score[id]!=null) t.push('<span class="stag acb" title="'+esc(A.q)+'">ACB '+A.score[id]+' · '+esc(A.crit[A.score[id]])+'</span>');
+  if(C && C.cat[id]) t.push('<span class="stag qt q'+C.cat[id]+'" title="'+esc(C.q+": "+C.lab[C.cat[id]])+'">QT: '+C.cat[id]+' · '+({KR:"bekanntes Torsade-Risiko",PR:"Risiko möglich",CR:"Risiko unter Bedingungen",SR:"bei angeborenem Long-QT"}[C.cat[id]])+'</span>');
+  if(P){ var e = P.pim[id];
+    if(e) t.push('<span class="stag pim" title="'+esc(P.q+": "+e.g)+'">PRISCUS: PIM ≥ 65'+(e.c?' ('+esc(e.c)+')':'')+'</span>');
+    else if(P.non.indexOf(id)>=0) t.push('<span class="stag ok" title="'+esc(P.q)+'">PRISCUS: kein PIM</span>');
+    else if(P.amb.indexOf(id)>=0) t.push('<span class="stag amb" title="'+esc(P.q)+'">PRISCUS: uneindeutig</span>'); }
+  return t.length ? '<div class="stags">'+t.join("")+'</div>' : '';
+}
+function priscusBox(id, act){
+  var P = window.PRISCUS, e = P && P.pim[id]; if(!e || act.indexOf("alt")<0) return "";
+  return '<div class="find y pbox"><div class="ft">PRISCUS 2.0: potenziell inadäquat ab 65 Jahren'+(e.c?' ('+esc(e.c)+')':'')+'</div><div class="fa">Listeneintrag: '+esc(e.g)+'.'+(e.alt?' Alternativen laut Liste (Expertenmeinung, je nach Indikation): '+esc(e.alt)+'.':'')+'</div><div class="fd">'+esc(P.q)+'</div></div>';
+}
+function qtBox(meds){
+  var C = window.CREDMEDS; if(!C) return "";
+  var ord = {KR:0,PR:1,CR:2,SR:3}, on = meds.filter(function(id){ return C.cat[id]; }).sort(function(a,b){ return ord[C.cat[a]]-ord[C.cat[b]]; }), off = meds.filter(function(id){ return !C.cat[id]; });
+  var kr = on.filter(function(id){ return C.cat[id]==="KR"; }).length;
+  return '<div class="card qt-box"><div class="acb-h"><span class="acb-n qtn">'+kr+'</span><span><b>QT/Torsade-Risiko (CredibleMeds)</b><span class="note-soft">'+kr+' mit bekanntem Risiko (KR) · '+on.length+' gelistet</span></span></div>'+
+    (on.length?'<div class="acb-l">'+on.map(function(id){ return '<span class="acb-i q'+C.cat[id]+'" title="'+esc(C.lab[C.cat[id]])+'">'+esc(D[id].n)+' <b>'+C.cat[id]+'</b></span>'; }).join("")+'</div>':'')+
+    (off.length?'<p class="hint">Nicht gelistet (laut CredibleMeds nicht gleichbedeutend mit „ohne Risiko“): '+esc(off.map(function(id){ return D[id].n; }).join(", "))+'</p>':'')+
+    '<p class="hint">KR bekanntes Torsade-Risiko · PR möglich · CR unter Bedingungen (Überdosis, Hypokaliämie, Interaktion) · SR bei angeborenem Long-QT. '+esc(C.q)+'.</p></div>';
+}
+function priscusIA(meds, act){
+  var P = window.PRISCUS; if(!P) return "";
+  if(act.indexOf("alt")<0) return '<p class="hint pr-hint">PRISCUS-2.0-Prüfung: Kontext „≥ 65 J.“ aktivieren.</p>';
+  var on = meds.filter(function(id){ return P.pim[id]; });
+  return '<div class="card pr-box"><div class="acb-h"><span class="acb-n prn">'+on.length+'</span><span><b>PRISCUS 2.0 · potenziell inadäquat ab 65</b><span class="note-soft">'+(on.length?'Alternativen je Wirkstoff unten':'keine der eingegebenen Substanzen gelistet')+'</span></span></div>'+
+    (on.length?'<ul class="fl">'+on.map(function(id){ var e = P.pim[id]; return '<li><b>'+esc(D[id].n)+'</b>'+(e.c?' ('+esc(e.c)+')':'')+(e.alt?': '+esc(e.alt):'')+'</li>'; }).join("")+'</ul>':'')+
+    '<p class="hint">'+esc(P.q)+'. Nicht gelistete Substanzen sind nicht bewertet; „kein PIM“ laut Liste: '+esc(P.non.filter(function(id){ return meds.indexOf(id)>=0; }).map(function(id){ return D[id].n; }).join(", ")||"–")+'.</p></div>';
+}
 function acbBox(meds){
   var A = window.ACB; if(!A) return "";
   var on = meds.filter(function(id){ return A.score[id]!=null; }), off = meds.filter(function(id){ return A.score[id]==null && A.notAdded.indexOf(id)<0; });
@@ -1027,7 +1060,7 @@ function viewIA(){
     h += '<div class="summary">'+(cnt.r?'<span class="pill r"><span class="dot r"></span>'+cnt.r+' kritisch</span>':'')+(cnt.y?'<span class="pill y"><span class="dot y"></span>'+cnt.y+' Vorsicht</span>':'')+(cnt.i?'<span class="pill i">'+cnt.i+' Hinweis</span>':'')+(!F.length?'<span class="pill g"><span class="dot g"></span>Keine Mechanismus-Warnung</span>':'')+'</div>';
     h += F.map(function(f){ return '<div class="find '+f.sev+'"><div class="ft">'+esc(f.title)+' <span class="pill n">'+esc(f.cat)+'</span></div><div class="fd">'+esc(f.drugs.join(" + "))+'</div><div class="fa">'+vt(f.text)+'</div>'+(f.act?'<div class="fa"><b>Tun:</b> '+vt(f.act)+'</div>':'')+'</div>'; }).join("");
   }
-  if(st.meds.length>=1) h += acbBox(st.meds);
+  if(st.meds.length>=1) h += '<div class="sec-h">Geprüft gegen veröffentlichte Listen</div>'+acbBox(st.meds)+qtBox(st.meds)+priscusIA(st.meds, act);
   h += '<p class="note-soft" style="margin-top:12px">Geprüft werden Mechanismen (CYP-Hemmung und -Induktion, QT, serotonerg, anticholinerg, Atemdepression, Sedierung, Krampfschwelle, Natrium, Blutung, Lithium, Blutbild, Kreislauf, D2, Opioide) plus bekannte Einzelregeln. Seltene Einzelinteraktionen fehlen: im Zweifel Klinik-Interaktionsprogramm.</p>';
   if(st.meds.length>=2) h += aiBlock("i","Wie gefährlich ist diese Kombination und was ist die beste Alternative?");
   return h;
@@ -1142,7 +1175,7 @@ function cypHTML(t){
 function sheetDrug(id){
   var d = D[id]; if(!d) return "<p>Nicht gefunden.</p>";
   var act = activeCtx(), key = "drug:"+id;
-  var h = '<div class="dh">'+ava(id,'lg')+'<div class="dh-t"><div class="eyebrow">'+esc(d.g||"")+(d.stub?" · Kurzeintrag":"")+'</div><h2 class="title">'+esc(d.n)+'</h2><div class="brands">'+esc(d.k||"")+(d.b&&d.b.length?' · '+esc(d.b.join(", ")):'')+(d.hw?' · HWZ '+esc(d.hw):'')+'</div>'+(window.ACB&&ACB.score[id]!=null?'<div class="acb-tag" title="'+esc(ACB.q)+'">ACB '+ACB.score[id]+' · '+esc(ACB.crit[ACB.score[id]])+'</div>':'')+'</div></div>'+merkBox(id);
+  var h = '<div class="dh">'+ava(id,'lg')+'<div class="dh-t"><div class="eyebrow">'+esc(d.g||"")+(d.stub?" · Kurzeintrag":"")+'</div><h2 class="title">'+esc(d.n)+'</h2><div class="brands">'+esc(d.k||"")+(d.b&&d.b.length?' · '+esc(d.b.join(", ")):'')+(d.hw?' · HWZ '+esc(d.hw):'')+'</div>'+srcTags(id)+'</div></div>'+priscusBox(id, act)+merkBox(id);
   if(!d.stub){ var dj=[["j-dos","Dosis"],["j-ind","Indikation"],["j-ki","KI"],["j-ia","Interaktionen"],["j-nw","NW"],["j-ktr","Kontrollen"],["j-ss","SS/Stillzeit"],["j-auf","Aufklärung"]];
     h += '<nav class="jump" aria-label="Abschnitte">'+dj.map(function(j){ return '<button data-jump="'+j[0]+'">'+esc(j[1])+'</button>'; }).join("")+'</nav>'; }
   if(act.length) h += '<div class="ctxgrid">'+ctxPills(d, act)+'</div>';
@@ -1220,6 +1253,7 @@ function sheetInfo(){
   '<div class="card"><p><b>Quellenkürzel</b></p><p>K Benkert/Hippius Kompendium 2021 · P Benkert Pocket Guide 2021 · Dr Dreher 2021 · RHB Rote-Hand-Brief · FI Fachinformation · S3 AWMF-S3-Leitlinie (Alkohol 2021, Medikamentenbezogene Störungen, Schizophrenie, Insomnie, BPS 2022, Demenzen, Methamphetamin 2016) · NVL Nationale VersorgungsLeitlinie Depression · AGNP TDM-Konsensus (Hiemke et al.) · PRISCUS 2.0 · Embryotox · CredibleMeds (QT) · Ashton-Manual (BZD-Äquivalenzen) · BÄK-Richtlinie Substitution · WHO ATC/DDD · Benkert/Hippius, Kompendium 13. Aufl. 2021 · Benkert, Pocket Guide 6. Aufl. 2021 · Dreher, Psychopharmakotherapie griffbereit 5. Aufl. 2021.</p></div>'+
   '<div class="card"><p><b>Deine Rückmeldungen</b> · <span id="fb-count">'+esc(fbCountText())+'</span></p><p class="hint">Jede Karte hat unten „Fehler melden“. Profilpunkte bewertest du direkt beim Antippen eines Punkts. Claude liest die Meldungen beim nächsten Update und setzt sie auf „eingearbeitet“.</p></div>'+
   pruefInfo()+
+  '<div class="card"><p><b>Version 3.6 vom 09.10.2026 · PRISCUS 2.0 und CredibleMeds</b></p><ul class="fl"><li>PRISCUS 2.0 (Dtsch Arztebl Int 2023): 56 Wirkstoffe der App (inkl. Komedikation) als potenziell inadäquat ab 65 – mit den Bedingungen der Liste (z. B. Quetiapin > 100 mg/d, > 6 Wochen) und den genannten Alternativen; dazu „kein PIM“ und „uneindeutig“ aus den Zusatztabellen.</li><li>Mit Kontext „≥ 65 J.“: PRISCUS-Hinweis in der Wirkstoffkarte, PIM-Mittel rutschen in den Entscheidungshilfen in „Mit Vorsicht“, der Interaktions-Check listet sie mit Alternativen.</li><li>CredibleMeds (Stand 14.09.2026): QT-Kategorie KR/PR/CR/SR für 56 Wirkstoffe, im Kopf der Karte und als eigene Karte im Interaktions-Check; die Profilspalte heißt jetzt „QTc-/Torsade-Risiko“ und ist für gelistete Mittel belegt.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.5 vom 09.10.2026 · ACB-Skala</b></p><ul class="fl"><li>Anticholinerge Last aus der ACB-Skala (2012 Update, Aging Brain Care/Regenstrief) statt eigener Schätzung: 26 Wirkstoffe der App mit Score 1–3, Duloxetin und Gabapentin als „geprüft, nicht aufgenommen“. In der Profiltabelle mit ✓, in der Herkunft mit Quelle.</li><li>Interaktion: neue Karte „Anticholinerge Last“ mit ACB-Summe der eingegebenen Medikamente, Zahl definitiver und möglicher Anticholinergika und den Risikoangaben des ACB-Blatts. Nicht gelistete Mittel werden ausgewiesen, nicht als 0 gezählt.</li><li>Wirkstoffkarten zeigen den ACB-Score im Kopf.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.4 vom 09.10.2026 · Sicherer</b></p><ul class="fl"><li>Entscheidungshilfen ohne Rangliste: statt „Beste Wahl“ drei Stufen – „Passt zu deinen Angaben“, „Mit Vorsicht“ (mit allen Einwänden), „Weitere Optionen der Karte“. Die Punktgewichtung bestimmt nur noch die Reihenfolge innerhalb einer Stufe.</li><li>Profilpunkte sind sichtbar als eigene Schätzung gekennzeichnet (≈). Belegte Werte aus veröffentlichten Skalen bekommen ✓ und Quelle, sobald die Quellen vorliegen.</li><li>Jede Karte hat unten „Fehler melden oder Korrektur vorschlagen“; jeder Profilpunkt lässt sich als „stimmt / zu hoch / zu niedrig“ bewerten. Die Meldungen landen in der Datenbank der App und werden beim nächsten Update eingearbeitet.</li><li>Quelltext, Build und alle Prüfungen liegen jetzt im Repository (Branch psychopharmaka-kompass) und laufen bei jeder Änderung automatisch.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.3 vom 09.10.2026 · Übersichtlicher</b></p><ul class="fl"><li>Fünf statt sechs Bereiche: Der Profilvergleich ist jetzt Teil von „Wirkstoffe“ (Liste · Klassen · Vergleich).</li><li>Jeder Bereich hat ein Symbol und eine Farbe (Schlaf, Anspannung, EPMS/Notfall, Entzug, Diagnosen) – auf der Startseite, in allen Listen und in der Suche.</li><li>Situationen und Suche: Die Entscheidungshilfe steht als Knopf „Entscheiden“ direkt neben der Situation, statt doppelt in der Liste.</li><li>Entscheidungshilfen: Beantwortete Fragen schrumpfen auf eine Zeile mit der gewählten Antwort (antippen zum Ändern), die nächste offene Frage ist hervorgehoben, Patientenangaben kompakt.</li><li>Wirkstoffkarten und Rechner: Zugeklappte Abschnitte zeigen eine Vorschau ihres Inhalts.</li><li>Startseite: „Weiter mit“ als waagrechte Leiste; am Computer zeigt die rechte Fläche die zuletzt geöffneten Karten.</li><li>Fehler behoben: Eingetippter Suchtext war kaum lesbar.</li></ul></div>'+
@@ -1359,7 +1393,7 @@ function saveOffline(){
   if(!window.claude || !window.claude.use){ toast("Du nutzt bereits die Offline-Kopie."); return; }
   window.claude.use("downloads").then(function(dl){
     if(!dl){ toast("Speichern ist in dieser Ansicht nicht verfügbar."); return; }
-    return dl.save({filename:"Psychopharmaka-Kompass_v3.5_2026-10-09_offline.html", data:buildOffline()}).then(function(r){ if(r.status==="saved") toast("Offline-Kopie gespeichert"); }, function(e){ if(e.code!=="declined") toast("Nicht gespeichert: "+e.code); });
+    return dl.save({filename:"Psychopharmaka-Kompass_v3.6_2026-10-09_offline.html", data:buildOffline()}).then(function(r){ if(r.status==="saved") toast("Offline-Kopie gespeichert"); }, function(e){ if(e.code!=="declined") toast("Nicht gespeichert: "+e.code); });
   });
 }
 

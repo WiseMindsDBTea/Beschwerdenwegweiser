@@ -13,7 +13,7 @@ window.PCOLS = [
  {k:"SED",t:"Sedierung tagsüber",s:"Sedierung"},
  {k:"GEW",t:"Gewichtszunahme / Metabolik",s:"Gewicht"},
  {k:"AC",t:"Anticholinerg",s:"Anticholin."},
- {k:"QT",t:"QTc-Verlängerung",s:"QTc"},
+ {k:"QT",t:"QTc-/Torsade-Risiko",s:"QTc"},
  {k:"EPS",t:"EPS / Akathisie",s:"EPS"},
  {k:"PRL",t:"Prolaktinanstieg",s:"Prolaktin"},
  {k:"KRL",t:"Kreislauf ↓ (Orthostase, Bradykardie)",s:"Kreislauf"},
