@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var D = window.D, SIT = window.SIT, RULES = window.RULES || [];
-var VERSION = "v3.4 · 09.10.2026";
+var VERSION = "v3.5 · 09.10.2026";
 var STAND = "Stand v1.2 (07.10.2026): Etappe 2 ergänzt 18 Diagnose-Algorithmen und 41 volle Wirkstoffkarten, geschrieben aus Benkert-Kompendium 2021, Pocket Guide 2021, Dreher 2021, Fachinformationen, Rote-Hand-Briefen und den gelesenen Leitlinienteilen (Stand je Karte). Etappe-1-Karten wie in v1.1 abgeglichen. Nicht belegbare Angaben bleiben als „prüfen“ markiert.";
 var AREAS = {schlaf:"Schlaf", spann:"Anspannung & Agitation", epms:"EPMS & Notfälle", entzug:"Entzug", dep:"Depression", angst:"Angst & Zwang", bip:"Bipolare Störung", schiz:"Schizophrenie-Spektrum", bps:"Borderline (BPS)", adhs:"ADHS", ptbs:"PTBS", demenz:"Demenz"};
 var AREA_SHORT = {spann:"Anspannung", epms:"Notfall", schiz:"Schizophrenie", bip:"Bipolar", bps:"Borderline"};
@@ -846,7 +846,8 @@ function iaWhy(id){
   return p.join(" · ");
 }
 /* Herkunft einer Eigenschaft: substanzspezifisch (o), aus dem Rezeptorprofil (r), allgemein (f) oder warum kaum (z) */
-function why(id, k){
+function why(id, k){ var w = why0(id,k), sq = pSrc(id,k); return sq ? {t:sq.q+(w.t?" · Mechanismus: "+w.t:""), s:"q"} : w; }
+function why0(id, k){
   var v = pv(id,k), m = PMECH[k]||{r:[]}, o = PWHY[id] && PWHY[id][k];
   var hits = m.r.map(function(x){ return [x[0], rxv(id,x[0]), x[1]]; }).filter(function(x){ return x[1]>0; }).sort(function(a,b){ return b[1]-a[1]; });
   if(k==="IA" && !o){ var ia = iaWhy(id); if(ia) return {t:ia, s:"r"}; }
@@ -869,7 +870,7 @@ function pExplain(id, k){
     h = '<p class="pexp-l"><b>'+esc(c.t)+':</b> '+PLV[v]+'</p><p>'+(v ? 'Erklärt hier: '+esc(mine.length ? mine.join(", ") : "keine der eingestuften Eigenschaften allein") : 'Keine relevante Wirkung an diesem Ziel.')+'</p><p class="hint">Typische Folgen dieses Mechanismus: '+esc(rxTypical(r).join(", ")||"–")+'</p>';
   } else { var w = why(id,k);
     var sq = pSrc(id,k);
-    h = '<p class="pexp-l"><b>'+esc(c.t)+':</b> '+PLV[v]+' <span class="'+(sq?'src-b':'est-b')+'">'+(sq?'✓ '+esc(sq.q):'≈ eigene Schätzung')+'</span></p><p><span class="why-k">'+(w.s==="o"?"Substanzspezifisch":w.s==="r"?"Mechanismus":w.s==="z"?"Warum kaum":"Herkunft")+':</span> '+esc(w.t)+'</p>'+voteBlock(id,k); }
+    h = '<p class="pexp-l"><b>'+esc(c.t)+':</b> '+PLV[v]+' <span class="'+(sq?'src-b':'est-b')+'">'+(sq?'✓ '+esc(sq.q):'≈ eigene Schätzung')+'</span></p><p><span class="why-k">'+(w.s==="q"?"Quelle":w.s==="o"?"Substanzspezifisch":w.s==="r"?"Mechanismus":w.s==="z"?"Warum kaum":"Herkunft")+':</span> '+esc(w.t)+'</p>'+voteBlock(id,k); }
   return '<div class="pexp-h">'+ava(id,'sm')+'<b>'+esc(D[id].n)+'</b><button class="pexp-x" data-pexp-x aria-label="Schließen">×</button></div>'+h+'<button class="lnk" data-open="drug:'+id+'">Karte öffnen</button>';
 }
 function showExplain(id, k){
@@ -1004,6 +1005,15 @@ function viewDrugs(){
   if(kom.length) h += '<div class="sec-h">Somatische Komedikation · '+kom.length+'</div><div class="list">'+lettered(kom)+'</div><p class="foot">Komedikation ist als Kurzeintrag für den Interaktions-Check angelegt.</p>';
   return h;
 }
+function acbBox(meds){
+  var A = window.ACB; if(!A) return "";
+  var on = meds.filter(function(id){ return A.score[id]!=null; }), off = meds.filter(function(id){ return A.score[id]==null && A.notAdded.indexOf(id)<0; });
+  var sum = on.reduce(function(t,id){ return t + A.score[id]; }, 0), def = on.filter(function(id){ return A.score[id]>=2; }).length, pos = on.filter(function(id){ return A.score[id]===1; }).length;
+  return '<div class="card acb-box"><div class="acb-h"><span class="acb-n">'+sum+'</span><span><b>Anticholinerge Last (ACB-Summe)</b><span class="note-soft">'+def+' definitiv · '+pos+' möglich anticholinerg</span></span></div>'+
+    (on.length?'<div class="acb-l">'+on.sort(function(a,b){ return A.score[b]-A.score[a]; }).map(function(id){ return '<span class="acb-i s'+A.score[id]+'">'+esc(D[id].n)+' <b>'+A.score[id]+'</b></span>'; }).join("")+'</div>':'')+
+    (off.length?'<p class="hint">Nicht in der ACB-Liste (keine Aussage, nicht automatisch 0): '+esc(off.map(function(id){ return D[id].n; }).join(", "))+'</p>':'')+
+    '<details class="acc acb-more"><summary><span class="acc-st"><span class="acc-t">Was die Summe bedeutet</span></span></summary><div class="acc-b"><ul class="fl">'+A.notes.map(function(n){ return '<li>'+esc(n)+'</li>'; }).join("")+'<li>Score 1: '+esc(A.crit[1])+' · 2: '+esc(A.crit[2])+' · 3: '+esc(A.crit[3])+'.</li></ul><p class="hint">Quelle: '+esc(A.q)+'. Die Liste ist US-amerikanisch; in Deutschland übliche Mittel wie Biperiden fehlen.</p></div></details></div>';
+}
 function viewIA(){
   var act = activeCtx();
   var F = st.meds.length>=1 ? interactions(st.meds, act) : [];
@@ -1017,6 +1027,7 @@ function viewIA(){
     h += '<div class="summary">'+(cnt.r?'<span class="pill r"><span class="dot r"></span>'+cnt.r+' kritisch</span>':'')+(cnt.y?'<span class="pill y"><span class="dot y"></span>'+cnt.y+' Vorsicht</span>':'')+(cnt.i?'<span class="pill i">'+cnt.i+' Hinweis</span>':'')+(!F.length?'<span class="pill g"><span class="dot g"></span>Keine Mechanismus-Warnung</span>':'')+'</div>';
     h += F.map(function(f){ return '<div class="find '+f.sev+'"><div class="ft">'+esc(f.title)+' <span class="pill n">'+esc(f.cat)+'</span></div><div class="fd">'+esc(f.drugs.join(" + "))+'</div><div class="fa">'+vt(f.text)+'</div>'+(f.act?'<div class="fa"><b>Tun:</b> '+vt(f.act)+'</div>':'')+'</div>'; }).join("");
   }
+  if(st.meds.length>=1) h += acbBox(st.meds);
   h += '<p class="note-soft" style="margin-top:12px">Geprüft werden Mechanismen (CYP-Hemmung und -Induktion, QT, serotonerg, anticholinerg, Atemdepression, Sedierung, Krampfschwelle, Natrium, Blutung, Lithium, Blutbild, Kreislauf, D2, Opioide) plus bekannte Einzelregeln. Seltene Einzelinteraktionen fehlen: im Zweifel Klinik-Interaktionsprogramm.</p>';
   if(st.meds.length>=2) h += aiBlock("i","Wie gefährlich ist diese Kombination und was ist die beste Alternative?");
   return h;
@@ -1131,7 +1142,7 @@ function cypHTML(t){
 function sheetDrug(id){
   var d = D[id]; if(!d) return "<p>Nicht gefunden.</p>";
   var act = activeCtx(), key = "drug:"+id;
-  var h = '<div class="dh">'+ava(id,'lg')+'<div class="dh-t"><div class="eyebrow">'+esc(d.g||"")+(d.stub?" · Kurzeintrag":"")+'</div><h2 class="title">'+esc(d.n)+'</h2><div class="brands">'+esc(d.k||"")+(d.b&&d.b.length?' · '+esc(d.b.join(", ")):'')+(d.hw?' · HWZ '+esc(d.hw):'')+'</div></div></div>'+merkBox(id);
+  var h = '<div class="dh">'+ava(id,'lg')+'<div class="dh-t"><div class="eyebrow">'+esc(d.g||"")+(d.stub?" · Kurzeintrag":"")+'</div><h2 class="title">'+esc(d.n)+'</h2><div class="brands">'+esc(d.k||"")+(d.b&&d.b.length?' · '+esc(d.b.join(", ")):'')+(d.hw?' · HWZ '+esc(d.hw):'')+'</div>'+(window.ACB&&ACB.score[id]!=null?'<div class="acb-tag" title="'+esc(ACB.q)+'">ACB '+ACB.score[id]+' · '+esc(ACB.crit[ACB.score[id]])+'</div>':'')+'</div></div>'+merkBox(id);
   if(!d.stub){ var dj=[["j-dos","Dosis"],["j-ind","Indikation"],["j-ki","KI"],["j-ia","Interaktionen"],["j-nw","NW"],["j-ktr","Kontrollen"],["j-ss","SS/Stillzeit"],["j-auf","Aufklärung"]];
     h += '<nav class="jump" aria-label="Abschnitte">'+dj.map(function(j){ return '<button data-jump="'+j[0]+'">'+esc(j[1])+'</button>'; }).join("")+'</nav>'; }
   if(act.length) h += '<div class="ctxgrid">'+ctxPills(d, act)+'</div>';
@@ -1209,6 +1220,7 @@ function sheetInfo(){
   '<div class="card"><p><b>Quellenkürzel</b></p><p>K Benkert/Hippius Kompendium 2021 · P Benkert Pocket Guide 2021 · Dr Dreher 2021 · RHB Rote-Hand-Brief · FI Fachinformation · S3 AWMF-S3-Leitlinie (Alkohol 2021, Medikamentenbezogene Störungen, Schizophrenie, Insomnie, BPS 2022, Demenzen, Methamphetamin 2016) · NVL Nationale VersorgungsLeitlinie Depression · AGNP TDM-Konsensus (Hiemke et al.) · PRISCUS 2.0 · Embryotox · CredibleMeds (QT) · Ashton-Manual (BZD-Äquivalenzen) · BÄK-Richtlinie Substitution · WHO ATC/DDD · Benkert/Hippius, Kompendium 13. Aufl. 2021 · Benkert, Pocket Guide 6. Aufl. 2021 · Dreher, Psychopharmakotherapie griffbereit 5. Aufl. 2021.</p></div>'+
   '<div class="card"><p><b>Deine Rückmeldungen</b> · <span id="fb-count">'+esc(fbCountText())+'</span></p><p class="hint">Jede Karte hat unten „Fehler melden“. Profilpunkte bewertest du direkt beim Antippen eines Punkts. Claude liest die Meldungen beim nächsten Update und setzt sie auf „eingearbeitet“.</p></div>'+
   pruefInfo()+
+  '<div class="card"><p><b>Version 3.5 vom 09.10.2026 · ACB-Skala</b></p><ul class="fl"><li>Anticholinerge Last aus der ACB-Skala (2012 Update, Aging Brain Care/Regenstrief) statt eigener Schätzung: 26 Wirkstoffe der App mit Score 1–3, Duloxetin und Gabapentin als „geprüft, nicht aufgenommen“. In der Profiltabelle mit ✓, in der Herkunft mit Quelle.</li><li>Interaktion: neue Karte „Anticholinerge Last“ mit ACB-Summe der eingegebenen Medikamente, Zahl definitiver und möglicher Anticholinergika und den Risikoangaben des ACB-Blatts. Nicht gelistete Mittel werden ausgewiesen, nicht als 0 gezählt.</li><li>Wirkstoffkarten zeigen den ACB-Score im Kopf.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.4 vom 09.10.2026 · Sicherer</b></p><ul class="fl"><li>Entscheidungshilfen ohne Rangliste: statt „Beste Wahl“ drei Stufen – „Passt zu deinen Angaben“, „Mit Vorsicht“ (mit allen Einwänden), „Weitere Optionen der Karte“. Die Punktgewichtung bestimmt nur noch die Reihenfolge innerhalb einer Stufe.</li><li>Profilpunkte sind sichtbar als eigene Schätzung gekennzeichnet (≈). Belegte Werte aus veröffentlichten Skalen bekommen ✓ und Quelle, sobald die Quellen vorliegen.</li><li>Jede Karte hat unten „Fehler melden oder Korrektur vorschlagen“; jeder Profilpunkt lässt sich als „stimmt / zu hoch / zu niedrig“ bewerten. Die Meldungen landen in der Datenbank der App und werden beim nächsten Update eingearbeitet.</li><li>Quelltext, Build und alle Prüfungen liegen jetzt im Repository (Branch psychopharmaka-kompass) und laufen bei jeder Änderung automatisch.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.3 vom 09.10.2026 · Übersichtlicher</b></p><ul class="fl"><li>Fünf statt sechs Bereiche: Der Profilvergleich ist jetzt Teil von „Wirkstoffe“ (Liste · Klassen · Vergleich).</li><li>Jeder Bereich hat ein Symbol und eine Farbe (Schlaf, Anspannung, EPMS/Notfall, Entzug, Diagnosen) – auf der Startseite, in allen Listen und in der Suche.</li><li>Situationen und Suche: Die Entscheidungshilfe steht als Knopf „Entscheiden“ direkt neben der Situation, statt doppelt in der Liste.</li><li>Entscheidungshilfen: Beantwortete Fragen schrumpfen auf eine Zeile mit der gewählten Antwort (antippen zum Ändern), die nächste offene Frage ist hervorgehoben, Patientenangaben kompakt.</li><li>Wirkstoffkarten und Rechner: Zugeklappte Abschnitte zeigen eine Vorschau ihres Inhalts.</li><li>Startseite: „Weiter mit“ als waagrechte Leiste; am Computer zeigt die rechte Fläche die zuletzt geöffneten Karten.</li><li>Fehler behoben: Eingetippter Suchtext war kaum lesbar.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.2 vom 08.10.2026 · Gesichter und Herkunft</b></p><ul class="fl"><li>Jede Wirkstoffklasse hat eine eigene Farbe, ein Symbol und eine Persona (z. B. SSRI „Die Pumpen-Schließer“, Aripiprazol-Klasse „Die Thermostate“). Jeder Wirkstoff trägt ein Kürzel wie im Periodensystem (Mi, Qu, Li) und ein Merkbild, das Mechanismus und Klinik verbindet.</li><li>Wirkstoffe: neue Ansicht „Klassen-Atlas“ mit allen 31 Klassen und Merkbildern.</li><li>Herkunft jeder Eigenschaft: Rezeptorprofil je Wirkstoff (33 Ziele) und Regeln, welcher Mechanismus welche Eigenschaft erzeugt (z. B. Gewicht ← H1- und 5-HT2C-Blockade), dazu substanzspezifische Ursachen (z. B. Lamotrigin-SJS: HLA, schnelle Aufdosierung, Valproat). Sichtbar in der Wirkstoffkarte, in jedem Vergleich („Woher die Unterschiede kommen“) und per Antippen eines Punkts in der Profiltabelle.</li><li>Profiltabelle: Spaltensatz „Rezeptoren“, sortierbar (z. B. nach H1); die Suche versteht Rezeptoren („H1“, „D2“, „SERT“).</li><li>Korrektur der Einstufung: QTc bei Donepezil höher als bei Galantamin.</li></ul></div>'+
@@ -1347,7 +1359,7 @@ function saveOffline(){
   if(!window.claude || !window.claude.use){ toast("Du nutzt bereits die Offline-Kopie."); return; }
   window.claude.use("downloads").then(function(dl){
     if(!dl){ toast("Speichern ist in dieser Ansicht nicht verfügbar."); return; }
-    return dl.save({filename:"Psychopharmaka-Kompass_v3.4_2026-10-09_offline.html", data:buildOffline()}).then(function(r){ if(r.status==="saved") toast("Offline-Kopie gespeichert"); }, function(e){ if(e.code!=="declined") toast("Nicht gespeichert: "+e.code); });
+    return dl.save({filename:"Psychopharmaka-Kompass_v3.5_2026-10-09_offline.html", data:buildOffline()}).then(function(r){ if(r.status==="saved") toast("Offline-Kopie gespeichert"); }, function(e){ if(e.code!=="declined") toast("Nicht gespeichert: "+e.code); });
   });
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "psychopharmaka-kompass",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "private": true,
   "description": "Taschenreferenz Psychopharmakologie (Claude-Artefakt, Einzeldatei)",
   "scripts": {

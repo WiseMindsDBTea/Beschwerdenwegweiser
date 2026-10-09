@@ -6,7 +6,7 @@ const scripts=[...html.matchAll(/<script data-app="1">([\s\S]*?)<\/script>/g)].m
 const win={};win.window=win;vm.createContext(win);
 const fail=[];const F=(m)=>fail.push(m);
 scripts.slice(0,-1).forEach((s,i)=>{try{vm.runInContext(s,win)}catch(e){F('Datenskript '+i+': '+e.message)}});
-const {D,SIT,V11,PCOLS,PROFM,PCLS,PCLSOF,PSYM,PMERK,PRX,PRXC,PMECH,PWHY,ALGS}=win;
+const {D,SIT,V11,PCOLS,PROFM,PCLS,PCLSOF,PSYM,PMERK,PRX,PRXC,PMECH,PWHY,ALGS,PSRC,ACB}=win;
 const CX=['schw','still','alt','jug','niere','leber','qtc','epi','delir','pd','sucht','atem','fahr'];
 // Wirkstoffe
 Object.entries(D).forEach(([k,d])=>{
@@ -30,6 +30,10 @@ const rk=new Set(PRXC.map(x=>x[0]));
 Object.entries(PRX).forEach(([k,r])=>Object.keys(r).forEach(x=>{if(!rk.has(x))F('Rezeptor unbekannt: '+k+' '+x)}));
 Object.entries(PMECH).forEach(([k,m])=>{if(!PCOLS.some(c=>c.k===k))F('Mechanik für unbekannte Spalte '+k);m.r.forEach(x=>{if(!rk.has(x[0]))F('Mechanik '+k+': Rezeptor '+x[0])})});
 Object.entries(PWHY).forEach(([k,o])=>{if(!D[k])F('Herkunft für unbekannten Wirkstoff '+k);Object.keys(o).forEach(c=>{if(!PCOLS.some(p=>p.k===c))F('Herkunft '+k+': Spalte '+c)})});
+// Belegte Werte und ACB
+Object.entries(PSRC||{}).forEach(([id,o])=>{if(!PROFM[id])F('PSRC ohne Profil: '+id);Object.entries(o).forEach(([k,x])=>{if(!PCOLS.some(c=>c.k===k))F('PSRC Spalte '+k);if(!(x.v>=0&&x.v<=3)||!x.q)F('PSRC '+id+'.'+k+' unvollständig')})});
+Object.entries(ACB.score).forEach(([id,v])=>{if(!D[id])F('ACB: unbekannter Wirkstoff '+id);if(![1,2,3].includes(v))F('ACB-Score '+id)});
+ACB.notAdded.forEach(id=>{if(!D[id])F('ACB notAdded unbekannt '+id)});
 // Entscheidungshilfen: jeder Schlüssel trifft eine Option oder einen Wirkstoff
 const fold=s=>String(s||'').toLowerCase().replace(/ä/g,'a').replace(/ö/g,'o').replace(/ü/g,'u').replace(/ß/g,'ss').replace(/[éèê]/g,'e');
 const slug=t=>fold(t).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');

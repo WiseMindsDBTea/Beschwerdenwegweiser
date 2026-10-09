@@ -22,7 +22,8 @@ await p.evaluate(()=>document.querySelector('td[data-pc="olanzapin|GEW"]').click
 out.estBadge=await p.evaluate(()=>!!document.querySelector('#pexp .est-b'));
 await p.evaluate(()=>document.querySelector('#pexp [data-pvote="hi"]').click());await p.waitForTimeout(150);
 out.voted=await p.evaluate(()=>document.querySelector('#pexp .pvote-done')?.textContent||'');
+await p.click('[data-tab="ia"]');await p.waitForTimeout(150);out.acb=await p.evaluate(()=>document.querySelector('.acb-n')?.textContent);
 out.stored=await p.evaluate(()=>JSON.parse(localStorage.getItem('pk_reports')||'[]').map(r=>r.kind+':'+r.key));
 console.log(JSON.stringify(out),errs);
-const ok=best===0&&!noTier.length&&out.fb&&out.est&&out.estProf&&out.estBadge&&out.voted&&out.stored.length===2&&!errs.length;
+const ok=best===0&&!noTier.length&&out.fb&&out.est&&out.estProf&&out.estBadge&&out.voted&&out.stored.length===2&&out.acb==='3'&&!errs.length;
 console.log(ok?'V34 OK':'V34 FEHLER');await b.close();process.exit(ok?0:1)})();
