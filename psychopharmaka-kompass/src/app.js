@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var D = window.D, SIT = window.SIT, RULES = window.RULES || [];
-var VERSION = "v3.6 · 09.10.2026";
+var VERSION = "v3.7 · 09.10.2026";
 var STAND = "Stand v1.2 (07.10.2026): Etappe 2 ergänzt 18 Diagnose-Algorithmen und 41 volle Wirkstoffkarten, geschrieben aus Benkert-Kompendium 2021, Pocket Guide 2021, Dreher 2021, Fachinformationen, Rote-Hand-Briefen und den gelesenen Leitlinienteilen (Stand je Karte). Etappe-1-Karten wie in v1.1 abgeglichen. Nicht belegbare Angaben bleiben als „prüfen“ markiert.";
 var AREAS = {schlaf:"Schlaf", spann:"Anspannung & Agitation", epms:"EPMS & Notfälle", entzug:"Entzug", dep:"Depression", angst:"Angst & Zwang", bip:"Bipolare Störung", schiz:"Schizophrenie-Spektrum", bps:"Borderline (BPS)", adhs:"ADHS", ptbs:"PTBS", demenz:"Demenz"};
 var AREA_SHORT = {spann:"Anspannung", epms:"Notfall", schiz:"Schizophrenie", bip:"Bipolar", bps:"Borderline"};
@@ -331,6 +331,79 @@ function refreshNoteField(){
   ta.value = Notes.get(ta.dataset.key); updateNoteHint();
 }
 function updateNoteHint(){ var h=$("#note-mode"); if(h) h.textContent = Notes.mode==="db" ? "Synchronisiert über deine Geräte, nur für dich sichtbar." : "Nur auf diesem Gerät gespeichert (Sync nur in claude.ai)."; }
+
+/* ---------- Direktantworten in der Suche (v3.7) ---------- */
+var QA_INT = [
+  ["dos", /^(dosis|dosier|max|maxim|hochst|start|anfang|titr|aufdos|tagesdos|erhalt|mg$)/, "Dosierung"],
+  ["ki",  /^(ki|kontraind|gegenanz)$|^kontraind/, "Kontraindikationen"],
+  ["ktr", /^(kontroll|labor|monitor|ekg|spiegel|tdm|blutbild|bb$|routine|uberwach)/, "Kontrollen"],
+  ["ss",  /^(schwanger|ss$|still|laktat|embryo)/, "Schwangerschaft und Stillzeit"],
+  ["nw",  /^(nebenw|nw$|unerwunscht)/, "Nebenwirkungen"],
+  ["ia",  /^(interak|cyp|wechselw|kombin)/, "Interaktionen"],
+  ["auf", /^(aufklar|laien|patienteninfo)/, "Aufklärung"],
+  ["ind", /^(indikat|zugelass|zulass|offlabel|off-label)/, "Indikation"],
+  ["qt",  /^(qt|qtc|torsad)/, "QT/Torsade"],
+  ["acb", /^(acb|antichol)/, "Anticholinerge Last"],
+  ["old", /^(alter|alte|alterer|geriatr|priscus|senior)/, "Ältere"]
+];
+function qaParse(q){
+  var toks = fold(q).split(/[^a-z0-9ß-]+/).filter(Boolean), drug = null, ints = [];
+  toks.forEach(function(t){
+    if(!drug && t.length>=4){ var id = Object.keys(D).filter(function(k){ var d = D[k]; return fold(d.n).indexOf(t)===0 || (d.b||[]).some(function(b){ return fold(b).indexOf(t)===0; }); })[0]; if(id){ drug = id; return; } }
+    QA_INT.forEach(function(x){ if(x[1].test(t) && ints.indexOf(x[0])<0) ints.push(x[0]); });
+  });
+  return drug ? {id:drug, ints:ints, max:toks.some(function(t){ return /^(max|maxim|hochst)/.test(t); })} : null;
+}
+function maxLines(t){ return splitSent(t||"").map(function(o){ return o.raw.split(o.P).join("."); }).filter(function(z){ return /\bmax\.|\bmaximal|Höchstdosis|Tageshöchst/i.test(z); }); }
+function qaCard(p){
+  var id = p.id, d = D[id], act = activeCtx(), h = "", lab = [];
+  function sec(t, body){ if(body) h += '<div class="qa-s"><div class="qa-l">'+esc(t)+'</div>'+body+'</div>'; }
+  var ints = p.ints.length ? p.ints : ["kern"];
+  ints.forEach(function(k){
+    var L = QA_INT.filter(function(x){ return x[0]===k; })[0]; if(L) lab.push(L[2]);
+    if(k==="kern") sec("Kern", '<ol class="qa-k">'+(d.kern||[]).map(function(l){ return '<li>'+vt(l)+'</li>'; }).join("")+'</ol>');
+    if(k==="dos" && d.dos){
+      if(p.max){ var mx = maxLines(d.dos.e).map(function(z){ return ["Erwachsene", z]; }).concat(maxLines(d.dos.a).map(function(z){ return ["≥ 65 J.", z]; }));
+        sec("Höchstdosis", mx.length ? '<ul class="fl">'+mx.map(function(x){ return '<li><b>'+x[0]+':</b> '+vt(x[1])+'</li>'; }).join("")+'</ul>' : '<p class="hint">Keine ausdrückliche Höchstdosis in der Karte – Dosierung unten und Fachinformation prüfen.</p>'); }
+      var ja = act.indexOf("jug")>=0, aa = act.indexOf("alt")>=0;
+      sec("Dosierung", '<div class="kv kv1"><div'+(!ja&&!aa?' class="hl"':'')+'><b>Erwachsene</b>'+fmtText(d.dos.e)+'</div><div'+(aa?' class="hl"':'')+'><b>≥ 65 Jahre</b>'+fmtText(d.dos.a)+'</div><div'+(ja?' class="hl"':'')+'><b>12–17 Jahre</b>'+fmtText(d.dos.j)+'</div></div>');
+    }
+    if(k==="ki") sec("Kontraindikationen", d.ki ? fmtText(d.ki) : "");
+    if(k==="ktr") sec("Kontrollen", d.ktr ? ktrPlan([id]) : "");
+    if(k==="ss") sec("Schwangerschaft und Stillzeit", d.ss ? fmtText(d.ss)+'<p class="hint">Einzelfall: embryotox.de</p>' : "");
+    if(k==="nw") sec("Nebenwirkungen", d.nw ? fmtText(d.nw) : "");
+    if(k==="ia") sec("Interaktionen", (d.ia ? fmtText(d.ia) : "")+cypHTML(d.tg||{}));
+    if(k==="auf") sec("Aufklärung in Laiensprache", d.auf ? fmtPara(d.auf) : "");
+    if(k==="ind") sec("Indikation", d.ind ? '<div class="kv kv1"><div><b>Zugelassen (DE)</b>'+fmtText(d.ind)+'</div><div><b>Off-label</b>'+fmtText(d.off)+'</div></div>' : "");
+    if(k==="qt"){ var C = window.CREDMEDS, cq = d.cx && d.cx.qtc;
+      sec("QT/Torsade", (C&&C.cat[id] ? '<p><b>'+esc(C.cat[id])+'</b> – '+esc(C.lab[C.cat[id]])+' <span class="hint">('+esc(C.q)+')</span></p>' : '<p class="hint">Nicht in der CredibleMeds-Liste (laut CredibleMeds nicht gleichbedeutend mit „ohne Risiko“).</p>')+(cq ? '<p><b>Karte:</b> '+vt(cq[1])+'</p>' : '')); }
+    if(k==="acb"){ var A = window.ACB;
+      sec("Anticholinerge Last", A&&A.score[id]!=null ? '<p><b>ACB '+A.score[id]+'</b> – '+esc(A.crit[A.score[id]])+' <span class="hint">('+esc(A.q)+')</span></p>' : '<p class="hint">Nicht in der ACB-Liste (keine Aussage).</p>'); }
+    if(k==="old"){ var P = window.PRISCUS, e = P && P.pim[id], ca = d.cx && d.cx.alt;
+      sec("Ältere", (e ? '<p><b>PRISCUS 2.0: potenziell inadäquat</b>'+(e.c?' ('+esc(e.c)+')':'')+(e.alt?'. Alternativen: '+esc(e.alt):'')+'</p>' : P&&P.non.indexOf(id)>=0 ? '<p><b>PRISCUS 2.0:</b> kein PIM</p>' : P&&P.amb.indexOf(id)>=0 ? '<p><b>PRISCUS 2.0:</b> uneindeutig</p>' : '<p class="hint">In PRISCUS 2.0 nicht bewertet.</p>')+(ca?'<p><b>Karte:</b> '+vt(ca[1])+'</p>':'')+(d.dos&&d.dos.a?'<div class="kv kv1"><div class="hl"><b>Dosis ≥ 65 Jahre</b>'+fmtText(d.dos.a)+'</div></div>':'')); }
+  });
+  return '<div class="qa"><div class="qa-h">'+ava(id,'sm')+'<span class="qa-t"><b>'+esc(d.n)+'</b>'+(lab.length?' · '+esc(lab.join(" · ")):'')+'</span><button class="lnk" data-open="drug:'+id+'">Karte ›</button></div>'+srcTags(id)+h+
+    (d.src?'<p class="hint qa-src">Quellen der Karte: '+vt(d.src)+'</p>':'')+'</div>';
+}
+/* ---------- Kontrollplan mit Arztbrief-Baustein (v3.7) ---------- */
+var SRC_TAG = /\s*\((?:K|P|Dr|FI|AGNP|RHB|S3|NVL)(?:[^()]{0,40})\)/g;
+function ktrItems(id){
+  var d = D[id]; if(!d || !d.ktr) return [];
+  return splitSent(d.ktr).map(function(o){ var z = o.raw.split(o.P).join("."); return {t:z.replace(SRC_TAG,"").replace(/\s*\[\?\]/g,"").replace(/\s+([.,;])/g,"$1").trim(), q:/\[\?\]/.test(z)}; }).filter(function(x){ return x.t; });
+}
+function ktrPlan(ids){
+  ids = ids.filter(function(id){ return D[id] && D[id].ktr; });
+  if(!ids.length) return '<p class="hint">Keine Kontrollangaben in den Karten.</p>';
+  return '<div class="kp">'+ids.map(function(id){ return '<div class="kp-d" data-kpd="'+id+'">'+(ids.length>1?'<div class="kp-n">'+ava(id,'xs')+'<b>'+esc(D[id].n)+'</b></div>':'')+
+      ktrItems(id).map(function(x){ return '<label class="kp-i"><input type="checkbox"'+(x.q?'':' checked')+'><span>'+esc(x.t)+'</span>'+(x.q?' <span class="verify" title="In den Quellen nicht sicher belegt">prüfen</span>':'')+'</label>'; }).join("")+'</div>'; }).join("")+
+    '<div class="kp-act"><button class="btn ghost" data-kpcopy="1">Als Arztbrief-Text kopieren</button><span class="kp-st note-soft"></span></div>'+
+    '<p class="hint">Angehakte Punkte werden übernommen. Nicht belegte Punkte („prüfen“) sind abgewählt. Quellenkürzel entfallen im Text; keine Patientendaten.</p></div>';
+}
+function ktrText(box){
+  var parts = $$(".kp-d", box).map(function(g){ var L = $$(".kp-i input:checked", g).map(function(c){ return c.nextElementSibling.textContent; }); return L.length ? {n:D[g.dataset.kpd].n, L:L} : null; }).filter(Boolean);
+  if(!parts.length) return "";
+  return "Empfohlene Kontrollen unter der aktuellen Medikation:\n"+parts.map(function(p){ return (parts.length>1||true ? p.n+":\n" : "")+p.L.map(function(l){ return "– "+l; }).join("\n"); }).join("\n\n");
+}
 
 /* ---------- Rückmeldungen (v3.4): Fehler melden, Profilpunkte bewerten ---------- */
 var FB = {col:null, mode:"local", list:[], kinds:[["fehler","Fehler"],["fehlt","Fehlt"],["veraltet","Veraltet"],["anderes","Sonstiges"]],
@@ -955,7 +1028,8 @@ function viewSearch(){
     return h;
   }
   var r = search(st.q), res = r.res;
-  var h2 = "";
+  var qp = qaParse(st.q);
+  var h2 = qp ? qaCard(qp) : "";
   if(!res.length) h2 += '<p class="empty">Keine Karte gefunden. Probier ein Symptom („unruhe“), einen Wirkstoff oder Handelsnamen – oder frag Claude unten.</p>';
   else {
     var algs = res.filter(function(x){ return x.e.type==="alg"; });
@@ -1060,7 +1134,7 @@ function viewIA(){
     h += '<div class="summary">'+(cnt.r?'<span class="pill r"><span class="dot r"></span>'+cnt.r+' kritisch</span>':'')+(cnt.y?'<span class="pill y"><span class="dot y"></span>'+cnt.y+' Vorsicht</span>':'')+(cnt.i?'<span class="pill i">'+cnt.i+' Hinweis</span>':'')+(!F.length?'<span class="pill g"><span class="dot g"></span>Keine Mechanismus-Warnung</span>':'')+'</div>';
     h += F.map(function(f){ return '<div class="find '+f.sev+'"><div class="ft">'+esc(f.title)+' <span class="pill n">'+esc(f.cat)+'</span></div><div class="fd">'+esc(f.drugs.join(" + "))+'</div><div class="fa">'+vt(f.text)+'</div>'+(f.act?'<div class="fa"><b>Tun:</b> '+vt(f.act)+'</div>':'')+'</div>'; }).join("");
   }
-  if(st.meds.length>=1) h += '<div class="sec-h">Geprüft gegen veröffentlichte Listen</div>'+acbBox(st.meds)+qtBox(st.meds)+priscusIA(st.meds, act);
+  if(st.meds.length>=1) h += '<div class="sec-h">Geprüft gegen veröffentlichte Listen</div>'+acbBox(st.meds)+qtBox(st.meds)+priscusIA(st.meds, act)+'<details class="acc kp-ia"><summary><span class="acc-st"><span class="acc-t">Kontrollplan für diese Medikation</span><span class="acc-pv">Checkliste aus den Karten, als Arztbrief-Text kopierbar</span></span></summary><div class="acc-b">'+ktrPlan(st.meds)+'</div></details>';
   h += '<p class="note-soft" style="margin-top:12px">Geprüft werden Mechanismen (CYP-Hemmung und -Induktion, QT, serotonerg, anticholinerg, Atemdepression, Sedierung, Krampfschwelle, Natrium, Blutung, Lithium, Blutbild, Kreislauf, D2, Opioide) plus bekannte Einzelregeln. Seltene Einzelinteraktionen fehlen: im Zweifel Klinik-Interaktionsprogramm.</p>';
   if(st.meds.length>=2) h += aiBlock("i","Wie gefährlich ist diese Kombination und was ist die beste Alternative?");
   return h;
@@ -1191,7 +1265,7 @@ function sheetDrug(id){
     h += '<span class="anc" id="j-ki"></span>'+acc("Kontraindikationen", fmtText(d.ki));
     h += '<span class="anc" id="j-ia"></span>'+acc("Interaktionen", fmtText(d.ia)+cypHTML(d.tg||{})+'<button class="btn ghost" data-add-med="'+id+'">In Interaktions-Check übernehmen</button>');
     h += '<span class="anc" id="j-nw"></span>'+acc("Nebenwirkungen und Profil", fmtText(d.nw)+barsHTML(d.tg||{}));
-    h += '<span class="anc" id="j-ktr"></span>'+acc("Kontrollen", fmtText(d.ktr));
+    h += '<span class="anc" id="j-ktr"></span>'+acc("Kontrollen", fmtText(d.ktr)+'<details class="kp-w"><summary>Als Checkliste und Arztbrief-Baustein</summary>'+ktrPlan([id])+'</details>');
     h += '<span class="anc" id="j-ss"></span>'+acc("Schwangerschaft und Stillzeit", fmtText(d.ss)+'<p class="hint">Einzelfall: embryotox.de</p>', act.indexOf("schw")>=0||act.indexOf("still")>=0);
     h += '<span class="anc" id="j-auf"></span>'+acc("Aufklärung in Laiensprache", '<div id="auf" class="auf">'+fmtPara(d.auf)+'</div><button class="btn ghost" data-copy="auf">Text kopieren</button>');
     if(d.cx && Object.keys(d.cx).length){
@@ -1253,6 +1327,7 @@ function sheetInfo(){
   '<div class="card"><p><b>Quellenkürzel</b></p><p>K Benkert/Hippius Kompendium 2021 · P Benkert Pocket Guide 2021 · Dr Dreher 2021 · RHB Rote-Hand-Brief · FI Fachinformation · S3 AWMF-S3-Leitlinie (Alkohol 2021, Medikamentenbezogene Störungen, Schizophrenie, Insomnie, BPS 2022, Demenzen, Methamphetamin 2016) · NVL Nationale VersorgungsLeitlinie Depression · AGNP TDM-Konsensus (Hiemke et al.) · PRISCUS 2.0 · Embryotox · CredibleMeds (QT) · Ashton-Manual (BZD-Äquivalenzen) · BÄK-Richtlinie Substitution · WHO ATC/DDD · Benkert/Hippius, Kompendium 13. Aufl. 2021 · Benkert, Pocket Guide 6. Aufl. 2021 · Dreher, Psychopharmakotherapie griffbereit 5. Aufl. 2021.</p></div>'+
   '<div class="card"><p><b>Deine Rückmeldungen</b> · <span id="fb-count">'+esc(fbCountText())+'</span></p><p class="hint">Jede Karte hat unten „Fehler melden“. Profilpunkte bewertest du direkt beim Antippen eines Punkts. Claude liest die Meldungen beim nächsten Update und setzt sie auf „eingearbeitet“.</p></div>'+
   pruefInfo()+
+  '<div class="card"><p><b>Version 3.7 vom 09.10.2026 · Direktantworten und Kontrollpläne</b></p><ul class="fl"><li>Suche mit Direktantwort: „Quetiapin max“, „Lithium Spiegel“, „Clozapin Kontrollen“, „Mirtazapin Schwangerschaft“, „Haloperidol QT“, „Pipamperon Alter“ zeigen die passende Stelle der Karte sofort oben, ohne Karte zu öffnen. Nur der Wirkstoffname zeigt den Kern.</li><li>Kontrollplan: In jeder Wirkstoffkarte (Abschnitt Kontrollen) und im Interaktions-Check für die ganze Medikation als Checkliste; angehakte Punkte als Arztbrief-Text kopieren. Nicht belegte Punkte sind abgewählt, Quellenkürzel entfallen.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.6 vom 09.10.2026 · PRISCUS 2.0 und CredibleMeds</b></p><ul class="fl"><li>PRISCUS 2.0 (Dtsch Arztebl Int 2023): 56 Wirkstoffe der App (inkl. Komedikation) als potenziell inadäquat ab 65 – mit den Bedingungen der Liste (z. B. Quetiapin > 100 mg/d, > 6 Wochen) und den genannten Alternativen; dazu „kein PIM“ und „uneindeutig“ aus den Zusatztabellen.</li><li>Mit Kontext „≥ 65 J.“: PRISCUS-Hinweis in der Wirkstoffkarte, PIM-Mittel rutschen in den Entscheidungshilfen in „Mit Vorsicht“, der Interaktions-Check listet sie mit Alternativen.</li><li>CredibleMeds (Stand 14.09.2026): QT-Kategorie KR/PR/CR/SR für 56 Wirkstoffe, im Kopf der Karte und als eigene Karte im Interaktions-Check; die Profilspalte heißt jetzt „QTc-/Torsade-Risiko“ und ist für gelistete Mittel belegt.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.5 vom 09.10.2026 · ACB-Skala</b></p><ul class="fl"><li>Anticholinerge Last aus der ACB-Skala (2012 Update, Aging Brain Care/Regenstrief) statt eigener Schätzung: 26 Wirkstoffe der App mit Score 1–3, Duloxetin und Gabapentin als „geprüft, nicht aufgenommen“. In der Profiltabelle mit ✓, in der Herkunft mit Quelle.</li><li>Interaktion: neue Karte „Anticholinerge Last“ mit ACB-Summe der eingegebenen Medikamente, Zahl definitiver und möglicher Anticholinergika und den Risikoangaben des ACB-Blatts. Nicht gelistete Mittel werden ausgewiesen, nicht als 0 gezählt.</li><li>Wirkstoffkarten zeigen den ACB-Score im Kopf.</li></ul></div>'+
   '<div class="card"><p><b>Version 3.4 vom 09.10.2026 · Sicherer</b></p><ul class="fl"><li>Entscheidungshilfen ohne Rangliste: statt „Beste Wahl“ drei Stufen – „Passt zu deinen Angaben“, „Mit Vorsicht“ (mit allen Einwänden), „Weitere Optionen der Karte“. Die Punktgewichtung bestimmt nur noch die Reihenfolge innerhalb einer Stufe.</li><li>Profilpunkte sind sichtbar als eigene Schätzung gekennzeichnet (≈). Belegte Werte aus veröffentlichten Skalen bekommen ✓ und Quelle, sobald die Quellen vorliegen.</li><li>Jede Karte hat unten „Fehler melden oder Korrektur vorschlagen“; jeder Profilpunkt lässt sich als „stimmt / zu hoch / zu niedrig“ bewerten. Die Meldungen landen in der Datenbank der App und werden beim nächsten Update eingearbeitet.</li><li>Quelltext, Build und alle Prüfungen liegen jetzt im Repository (Branch psychopharmaka-kompass) und laufen bei jeder Änderung automatisch.</li></ul></div>'+
@@ -1393,7 +1468,7 @@ function saveOffline(){
   if(!window.claude || !window.claude.use){ toast("Du nutzt bereits die Offline-Kopie."); return; }
   window.claude.use("downloads").then(function(dl){
     if(!dl){ toast("Speichern ist in dieser Ansicht nicht verfügbar."); return; }
-    return dl.save({filename:"Psychopharmaka-Kompass_v3.6_2026-10-09_offline.html", data:buildOffline()}).then(function(r){ if(r.status==="saved") toast("Offline-Kopie gespeichert"); }, function(e){ if(e.code!=="declined") toast("Nicht gespeichert: "+e.code); });
+    return dl.save({filename:"Psychopharmaka-Kompass_v3.7_2026-10-09_offline.html", data:buildOffline()}).then(function(r){ if(r.status==="saved") toast("Offline-Kopie gespeichert"); }, function(e){ if(e.code!=="declined") toast("Nicht gespeichert: "+e.code); });
   });
 }
 
@@ -1423,6 +1498,12 @@ function bind(){
     var qed = t.closest("[data-qedit]"); if(qed){ QEDIT[qed.dataset.qedit] = true; rerenderSheetKeep(); return; }
     var pex = $("#pexp"); if(pex && !pex.hidden && (!t.closest("#pexp") || t.closest("[data-open]")) && !t.closest("[data-pc]")) pex.hidden = true;
     if(t.closest("[data-pexp-x]")){ hideExplain(); return; }
+    if(t.closest("[data-kpcopy]")){ var kpb = t.closest(".kp"), txt0 = ktrText(kpb), kst = $(".kp-st", kpb);
+      if(!txt0){ kst.textContent = "Nichts angehakt."; return; }
+      var done = function(m){ kst.textContent = m; };
+      if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt0).then(function(){ done("Kopiert."); }, function(){ fallbackCopy(kpb, txt0); done("Markiert – jetzt kopieren."); });
+      else { fallbackCopy(kpb, txt0); done("Markiert – jetzt kopieren."); }
+      return; }
     var fbk = t.closest("[data-fbkind]"); if(fbk){ $$("[data-fbkind]", fbk.parentNode).forEach(function(b){ b.setAttribute("aria-pressed", b===fbk); }); return; }
     if(t.closest("[data-fbsend]")){ var fbx = t.closest(".fb-b"), txt = $(".fb-t", fbx).value.trim(), stl = $(".fb-st", fbx);
       if(!txt){ stl.textContent = "Bitte kurz beschreiben, was nicht stimmt."; $(".fb-t", fbx).focus(); return; }
@@ -1509,6 +1590,7 @@ function bind(){
     if(e.key==="Enter" && e.target.id==="medq"){ var f=$("[data-sugg]"); if(f) f.click(); }
   });
 }
+function fallbackCopy(box, txt){ var ta = $(".kp-out", box); if(!ta){ ta = document.createElement("textarea"); ta.className = "kp-out"; ta.readOnly = true; box.appendChild(ta); } ta.value = txt; ta.focus(); ta.select(); }
 function selectText(el){ if(!el) return; var r=document.createRange(); r.selectNodeContents(el); var s=window.getSelection(); s.removeAllRanges(); s.addRange(r); toast("Markiert – jetzt kopieren"); }
 
 /* ---------- Start ---------- */
