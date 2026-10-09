@@ -1,0 +1,33 @@
+const APP=require('path').resolve(process.argv[2]||require('path').join(__dirname,'../dist/psychopharmaka-kompass.html'));
+const {chromium}=require('playwright');
+(async()=>{const b=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||undefined});const errs=[];const out={};
+for(const [w,h,sc] of [[400,860,'m'],[1440,900,'d']]) for(const scheme of ['light','dark']){
+ const p=await b.newPage({viewport:{width:w,height:h},colorScheme:scheme});p.on('pageerror',e=>errs.push(e.message));
+ await p.goto('file://'+APP);await p.waitForTimeout(300);
+ const tag=`${sc}-${scheme}`;
+ await p.click('[data-tab="drug"]');await p.waitForTimeout(150);await p.screenshot({path:`${tag}-az.png`});
+ await p.click('[data-dview="cls"]');await p.waitForTimeout(150);await p.screenshot({path:`${tag}-atlas.png`});
+ out[tag+'cards']=await p.$$eval('.cls-card',x=>x.length);
+ await p.evaluate(()=>{const b=document.createElement('button');b.dataset.open='drug:mirtazapin';document.body.appendChild(b);b.click();b.remove();});await p.waitForTimeout(200);
+ await p.screenshot({path:`${tag}-drug.png`});
+ await p.evaluate(()=>{const s=[...document.querySelectorAll('.sheet summary')].find(x=>x.textContent.startsWith('Profil'));s.click();s.scrollIntoView();});await p.waitForTimeout(100);
+ await p.screenshot({path:`${tag}-drugprof.png`});
+ out[tag+'sheetW']=await p.evaluate(()=>document.querySelector('.sheet').scrollWidth);
+ await p.evaluate(()=>document.querySelector('.cls-chip').click());await p.waitForTimeout(200);
+ out[tag+'clsJump']=await p.evaluate(()=>{const e=document.getElementById('cls-nassa');return e?Math.round(e.getBoundingClientRect().top):null});
+ await p.click('[data-tab="drug"]');await p.click('[data-dview="prof"]');await p.fill('#pq','Sertralin, Mirtazapin');await p.waitForTimeout(300);
+ await p.evaluate(()=>document.querySelector('.cmp-why').scrollIntoView());await p.screenshot({path:`${tag}-woher.png`});
+ await p.fill('#pq','');await p.evaluate(()=>document.querySelector('[data-pset="r"]').click());await p.waitForTimeout(150);
+ await p.evaluate(()=>document.querySelector('[data-psort="r:H1"]').click());await p.waitForTimeout(150);
+ out[tag+'h1top']=await p.$$eval('.pt tbody .pn-n',x=>x.slice(0,5).map(e=>e.textContent));
+ await p.evaluate(()=>document.querySelector('.ptw').scrollIntoView());
+ await p.evaluate(()=>document.querySelector('.pt tbody tr td[data-pc]').click());await p.waitForTimeout(100);
+ await p.screenshot({path:`${tag}-rx.png`});
+ await p.evaluate(()=>document.querySelector('[data-pset="n"]').click());await p.waitForTimeout(150);
+ await p.evaluate(()=>{const td=document.querySelector('td[data-pc="olanzapin|GEW"]');td.scrollIntoView({block:'center',inline:'center'});td.click();});await p.waitForTimeout(100);
+ out[tag+'exp']=await p.evaluate(()=>document.getElementById('pexp').innerText.slice(0,200));
+ await p.screenshot({path:`${tag}-exp.png`});
+ await p.fill('#pq','H1');await p.waitForTimeout(300);out[tag+'qH1']=await p.$$eval('.pt tbody .pn-n',x=>x.slice(0,3).map(e=>e.textContent));
+ out[tag+'docW']=await p.evaluate(()=>document.documentElement.scrollWidth);
+ await p.close();}
+console.log(JSON.stringify(out,null,1),errs);await b.close()})();

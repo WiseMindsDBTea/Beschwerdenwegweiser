@@ -1,0 +1,22 @@
+name: Psychopharmaka-Kompass
+on:
+  push:
+    paths: ["psychopharmaka-kompass/**", ".github/workflows/kompass.yml"]
+  pull_request:
+    paths: ["psychopharmaka-kompass/**", ".github/workflows/kompass.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: psychopharmaka-kompass
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build aus src/ muss dist/ entsprechen
+        run: python3 build.py && git diff --exit-code dist/
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm test

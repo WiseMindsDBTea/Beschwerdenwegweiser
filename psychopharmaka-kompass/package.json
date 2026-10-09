@@ -1,0 +1,13 @@
+{
+  "name": "psychopharmaka-kompass",
+  "version": "3.3.0",
+  "private": true,
+  "description": "Taschenreferenz Psychopharmakologie (Claude-Artefakt, Einzeldatei)",
+  "scripts": {
+    "build": "python3 build.py",
+    "test": "node tests/run.js"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}
