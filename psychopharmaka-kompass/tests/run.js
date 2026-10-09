@@ -15,7 +15,8 @@ const T=[
  ['v31test.js','Vergleich, Hover, Sortierung, Suche',o=>/\} \[\]\s*$/.test(o)],
  ['v32test.js','Klassen, Herkunft, Rezeptoren',o=>/\} \[\]\s*$/.test(o)],
  ['v34test.js','Stufen, Schätzung, Fehler melden, Bewertung',o=>/V34 OK/.test(o)],
- ['v37test.js','Direktantworten, Kontrollplan, Arztbrief-Text',o=>/V37 OK/.test(o)]
+ ['v37test.js','Direktantworten, Kontrollplan, Arztbrief-Text',o=>/V37 OK/.test(o)],
+ ['v38test.js','Lernbereich: alle Arten, Wiederholung, Lernansicht',o=>/V38 OK/.test(o)]
 ];
 function syntax(){ const src=path.join(__dirname,'../src');const files=fs.readdirSync(path.join(src,'data')).map(f=>path.join(src,'data',f)).concat([path.join(src,'app.js')]);
   let o='';for(const f of files){const r=spawnSync(process.execPath,['--check',f],{encoding:'utf8'});if(r.status!==0)o+=f+'\n'+r.stderr;}
